@@ -83,6 +83,13 @@ export interface LiveSocketClientOptions {
   endpoint?: string;
   initialPayload?: unknown;
   terminateTimeoutMs?: number;
+  /**
+   * When true (default), outbound `sendAudioChunk` and `sendVideoFrame` calls
+   * are dropped until the server confirms upstream setup by sending its first
+   * frame (`session_info` or `media_config`). Prevents mic/camera traffic from
+   * racing pre-dial validation or upstream `1007` rejections through proxies.
+   */
+  gateRealtimeMediaOnReady?: boolean;
   onBinaryFrame?: (data: ArrayBuffer) => void;
   onMediaConfig?: (msg: Record<string, unknown>) => void;
   onToolCall?: (msg: Record<string, unknown>) => void;
@@ -121,6 +128,7 @@ export class LiveSocketClient {
   private hasNotifiedDisconnect = false;
   private limitReached = false;
   private hadErrorEvent = false;
+  private upstreamReady = false;
 
   get isConnected(): boolean {
     return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
@@ -142,6 +150,7 @@ export class LiveSocketClient {
     this.hasNotifiedDisconnect = false;
     this.limitReached = false;
     this.hadErrorEvent = false;
+    this.upstreamReady = options.gateRealtimeMediaOnReady === false;
     this.options.onStateChange?.();
 
     const wsUrl = options.url ?? this.resolveEndpointUrl(options.endpoint);
@@ -160,6 +169,7 @@ export class LiveSocketClient {
 
     ws.onmessage = (event) => {
       if (this.ws !== ws) return;
+      this.upstreamReady = true;
       if (event.data instanceof ArrayBuffer) {
         options.onBinaryFrame?.(event.data);
         return;
@@ -204,6 +214,7 @@ export class LiveSocketClient {
   }
 
   sendAudioChunk(base64Data: string): void {
+    if (!this.upstreamReady) return;
     this.sendPayload({
       type: 'audio',
       mimeType: 'audio/pcm;rate=16000',
@@ -212,6 +223,7 @@ export class LiveSocketClient {
   }
 
   sendVideoFrame(base64Jpeg: string, mimeType = 'image/jpeg'): void {
+    if (!this.upstreamReady) return;
     this.sendPayload({
       type: 'video',
       mimeType,

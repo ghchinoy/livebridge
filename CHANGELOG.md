@@ -4,6 +4,19 @@ All notable changes to `livebridge` (`github.com/ghchinoy/livebridge` and `@ghch
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and both the Go module and TypeScript package follow lockstep [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-11-15
+
+### Added
+
+- **Built-in Avatar & Voice Registries (`presets.go`, `ts/presets.ts`):** Exported `PresetAvatars` / `PRESET_AVATARS` (11 built-in avatars), `PrebuiltVoices` / `PREBUILT_VOICES` (30 voices), `PresetAvatarVoices` / `PRESET_AVATAR_VOICES`, `DefaultVoiceForAvatar` / `defaultVoiceForAvatar`, and `PresetAvatarImageURL` / `presetAvatarImageUrl`.
+- **Pre-Dial Voice/Avatar Guardrail (`BuildConnectConfig`):** Passing a `PrebuiltVoice` name (such as `"Aoede"` or `"Puck"`) as a preset `AvatarData` now fails immediately in Go before dialing with a descriptive `1007` diagnostic, and preset avatars automatically default `VoiceName` to their companion voice when unset.
+
+### Fixed
+
+- **Vite Dev Proxy `Socket.writeAfterFIN` & Upstream `1007` Diagnostics (`conn.go`, `handler.go`, `ts/live-socket.ts`):**
+  - `LiveSocketClient` gates outbound `sendAudioChunk` and `sendVideoFrame` frames until the server's first frame (`session_info` / `media_config`) confirms upstream session readiness.
+  - `NewFixedHandler` and `NewDynamicHandler` extract and forward upstream `close 1007` reasons to the browser and drain inbound frames briefly (`SafeConn.WriteCloseAndDrain`) before closing the TCP socket.
+
 ## [0.1.0] - 2026-11-15
 
 ### Added
@@ -22,4 +35,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Stand-Alone Validation Examples & Documentation:**
   - `01-minimal-voice`, `02-avatar-desk`, `03-code-assistant`, and `04-ops-watchtower` plus full Diátaxis documentation (`README.md`, `docs/developers-guide.md`, `docs/recipes.md`, `docs/wire-protocol.md`).
 
+[0.1.1]: https://github.com/ghchinoy/livebridge/releases/tag/v0.1.1
 [0.1.0]: https://github.com/ghchinoy/livebridge/releases/tag/v0.1.0

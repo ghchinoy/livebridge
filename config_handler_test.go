@@ -104,6 +104,18 @@ func TestBuildConnectConfig_GuardrailsAndModalities(t *testing.T) {
 	if _, err := BuildConnectConfig(SessionSpec{Mode: ModeAvatar, AvatarData: squareURL}); err == nil {
 		t.Errorf("BuildConnectConfig(square 1024x1024) = nil error, want non-nil error")
 	}
+
+	if _, err := BuildConnectConfig(SessionSpec{Mode: ModeAvatar, AvatarData: "Aoede"}); err == nil {
+		t.Errorf("BuildConnectConfig(voice name \"Aoede\" as avatar) = nil error, want non-nil error")
+	}
+
+	kiraCfg, err := BuildConnectConfig(SessionSpec{Mode: ModeAvatar, AvatarData: "Kira"})
+	if err != nil {
+		t.Fatalf("BuildConnectConfig(Kira) returned error: %v", err)
+	}
+	if got := kiraCfg.SpeechConfig.VoiceConfig.PrebuiltVoiceConfig.VoiceName; got != "Aoede" {
+		t.Errorf("BuildConnectConfig(Kira).VoiceName = %q, want default paired voice %q", got, "Aoede")
+	}
 }
 
 func TestDeclarationsFromPageTools_WebMCPStringAndObjectSchemas(t *testing.T) {
@@ -265,6 +277,31 @@ func TestNewDynamicHandler_PreDialValidationAndAllowlists(t *testing.T) {
 		fc.mu.Unlock()
 		if dialedCfg == nil || len(dialedCfg.Tools) != 1 || len(dialedCfg.Tools[0].FunctionDeclarations) != 1 {
 			t.Errorf("NewDynamicHandler(AllowPageTools) LiveConnectConfig.Tools = %+v, want 1 FunctionDeclaration", dialedCfg)
+		}
+	})
+
+	t.Run("propagates_upstream_1007_close_reason", func(t *testing.T) {
+		fc := &fakeConnector{
+			connectErr: errors.New(`connecting to Live model: failed to receive setup complete: websocket: close 1007 (invalid payload data): Current project is not allowlisted for customized avatar feature`),
+		}
+		srv := httptest.NewServer(NewDynamicHandler(DynamicHandlerConfig{
+			Connector: fc,
+			Defaults:  SessionSpec{Mode: ModeAvatar, AvatarData: "Kira"},
+		}))
+		defer srv.Close()
+
+		conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http"), nil)
+		if err != nil {
+			t.Fatalf("websocket.Dial(%q) failed: %v", srv.URL, err)
+		}
+		defer func() { _ = conn.Close() }()
+
+		_ = conn.WriteJSON(SessionSpec{Mode: ModeAvatar, AvatarData: "Kira"})
+		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		_, _, closeErr := conn.ReadMessage()
+		var ce *websocket.CloseError
+		if !errors.As(closeErr, &ce) || ce.Code != websocket.CloseInvalidFramePayloadData || !strings.Contains(ce.Text, "allowlisted") {
+			t.Errorf("NewDynamicHandler(upstream 1007) closeErr = %v, want 1007 containing \"allowlisted\"", closeErr)
 		}
 	})
 }

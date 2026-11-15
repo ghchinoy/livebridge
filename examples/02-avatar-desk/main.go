@@ -31,8 +31,8 @@ var (
 		livebridge.DefaultModel,
 		"gemini-3.5-flash-lite-live-preview",
 	}
-	presetAvatars = []string{"Kira", "Puck", "Aoede", "Charon", "Fenrir", "Kore"}
-	presetVoices  = []string{"Kore", "Puck", "Aoede", "Charon", "Fenrir", "Leda"}
+	presetAvatars = livebridge.PresetAvatars
+	presetVoices  = livebridge.PrebuiltVoices
 )
 
 func main() {

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Lockstep semantic version shared with Go livebridge.Version.
-export const VERSION = '0.1.0';
+export const VERSION = '0.1.1';
 
 export * from './avatar-image.js';
 export * from './chime-synth.js';
@@ -22,6 +22,7 @@ export * from './live-session.js';
 export * from './live-socket.js';
 export * from './pcm-mic.js';
 export * from './pcm-player.js';
+export * from './presets.js';
 export * from './transcript-assembler.js';
 export * from './vision-capture.js';
 export * from './webmcp-host.js';

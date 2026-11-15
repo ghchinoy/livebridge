@@ -287,6 +287,9 @@ func buildAvatarConfig(spec SessionSpec) (*genai.AvatarConfig, error) {
 		if !ValidPresetName(data) {
 			return nil, fmt.Errorf("invalid preset avatar name %q", TruncateRunes(data, MaxLoggedValueRunes))
 		}
+		if IsPrebuiltVoice(data) && !IsPresetAvatar(data) {
+			return nil, fmt.Errorf("preset avatar %q is a voiceName, not an avatar preset (use Kira, Jay, Ingrid, Paul, Vera, Sam, Ben, Kai, Leo, Carmen, or Piper)", data)
+		}
 		cfg = &genai.AvatarConfig{AvatarName: data}
 	case "custom":
 		mimeType, imgBytes, err := ParseImageDataURL(data, AvatarImageMIMETypes)
@@ -332,6 +335,9 @@ func buildVoiceConfig(spec SessionSpec) *genai.VoiceConfig {
 	if voice != "" && !ValidPresetName(voice) {
 		slog.Warn("ignoring invalid voiceName; using server default voice", "value", TruncateRunes(voice, MaxLoggedValueRunes))
 		voice = ""
+	}
+	if voice == "" && spec.Mode == ModeAvatar {
+		voice = DefaultVoiceForAvatar(spec.AvatarData)
 	}
 	return &genai.VoiceConfig{
 		PrebuiltVoiceConfig: &genai.PrebuiltVoiceConfig{VoiceName: voice},

@@ -18,6 +18,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -76,7 +77,7 @@ func NewFixedHandler(cfg FixedHandlerConfig) http.Handler {
 			spec, err = cfg.SpecFromRequest(r, spec)
 			if err != nil {
 				slog.Warn("invalid session request", "err", err)
-				_ = ws.WriteClose(websocket.CloseInvalidFramePayloadData, "Invalid session config")
+				ws.WriteCloseAndDrain(websocket.CloseInvalidFramePayloadData, sanitizeCloseReason(err.Error(), "Invalid session config"))
 				return
 			}
 		}
@@ -102,7 +103,7 @@ func NewFixedHandler(cfg FixedHandlerConfig) http.Handler {
 		liveCfg, err := BuildConnectConfig(spec)
 		if err != nil {
 			logger.Warn("invalid session config", "err", err)
-			_ = ws.WriteClose(websocket.CloseInvalidFramePayloadData, "Invalid session config")
+			ws.WriteCloseAndDrain(websocket.CloseInvalidFramePayloadData, sanitizeCloseReason(err.Error(), "Invalid session config"))
 			return
 		}
 
@@ -112,7 +113,8 @@ func NewFixedHandler(cfg FixedHandlerConfig) http.Handler {
 		upstream, err := cfg.Connector.Connect(ctx, spec.Model, spec.Location, liveCfg)
 		if err != nil {
 			logger.Error("connecting to Gemini Live", "err", err)
-			_ = ws.WriteClose(websocket.CloseInternalServerErr, "Failed to connect")
+			code, reason := classifyConnectError(err)
+			ws.WriteCloseAndDrain(code, reason)
 			return
 		}
 
@@ -186,7 +188,7 @@ func NewDynamicHandler(cfg DynamicHandlerConfig) http.Handler {
 		var clientSpec SessionSpec
 		if err := ws.ReadJSON(&clientSpec); err != nil {
 			slog.Warn("reading initial session config", "err", err)
-			_ = ws.WriteClose(websocket.CloseInvalidFramePayloadData, "Invalid session config")
+			ws.WriteCloseAndDrain(websocket.CloseInvalidFramePayloadData, "Invalid session config")
 			return
 		}
 		ws.SetReadLimit(MaxClientMessageBytes)
@@ -205,7 +207,7 @@ func NewDynamicHandler(cfg DynamicHandlerConfig) http.Handler {
 			spec, err = cfg.TransformSpec(r, spec)
 			if err != nil {
 				slog.Warn("transforming session config", "err", err)
-				_ = ws.WriteClose(websocket.CloseInvalidFramePayloadData, "Invalid session config")
+				ws.WriteCloseAndDrain(websocket.CloseInvalidFramePayloadData, sanitizeCloseReason(err.Error(), "Invalid session config"))
 				return
 			}
 		}
@@ -219,7 +221,7 @@ func NewDynamicHandler(cfg DynamicHandlerConfig) http.Handler {
 		liveCfg, err := BuildConnectConfig(spec)
 		if err != nil {
 			logger.Warn("invalid session config", "err", err)
-			_ = ws.WriteClose(websocket.CloseInvalidFramePayloadData, "Invalid session config")
+			ws.WriteCloseAndDrain(websocket.CloseInvalidFramePayloadData, sanitizeCloseReason(err.Error(), "Invalid session config"))
 			return
 		}
 
@@ -236,7 +238,8 @@ func NewDynamicHandler(cfg DynamicHandlerConfig) http.Handler {
 		upstream, err := cfg.Connector.Connect(ctx, spec.Model, spec.Location, liveCfg)
 		if err != nil {
 			logger.Error("connecting to Gemini Live", "err", err)
-			_ = ws.WriteClose(websocket.CloseInternalServerErr, "Failed to connect")
+			code, reason := classifyConnectError(err)
+			ws.WriteCloseAndDrain(code, reason)
 			return
 		}
 
@@ -253,6 +256,30 @@ func NewDynamicHandler(cfg DynamicHandlerConfig) http.Handler {
 		defer bridge.Shutdown(0, "")
 		bridge.Run()
 	})
+}
+
+func classifyConnectError(err error) (int, string) {
+	if err == nil {
+		return websocket.CloseInternalServerErr, "Failed to connect"
+	}
+	msg := err.Error()
+	const marker1007 = "close 1007"
+	if idx := strings.Index(msg, marker1007); idx != -1 {
+		tail := msg[idx+len(marker1007):]
+		if _, after, ok := strings.Cut(tail, ":"); ok {
+			return websocket.CloseInvalidFramePayloadData, sanitizeCloseReason(after, "Invalid session config")
+		}
+		return websocket.CloseInvalidFramePayloadData, "Invalid session config"
+	}
+	return websocket.CloseInternalServerErr, "Failed to connect"
+}
+
+func sanitizeCloseReason(raw, fallback string) string {
+	cleaned := strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(raw, "\n", " "), "\r", " "))
+	if cleaned == "" {
+		return fallback
+	}
+	return truncateUTF8Bytes(cleaned, maxCloseReasonBytes)
 }
 
 func buildFixedToolRunner(cfg FixedHandlerConfig, r *http.Request, spec SessionSpec) *ToolRunner {

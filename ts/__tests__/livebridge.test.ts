@@ -20,14 +20,19 @@ import {
   CHIME_PRESETS,
   ChimeSynth,
   LiveSession,
+  PRESET_AVATARS,
   TranscriptAssembler,
   WebmcpToolHost,
   computeInt16Rms,
+  defaultVoiceForAvatar,
   describeCloseEvent,
   int16ArrayToLittleEndianBytes,
+  isPrebuiltVoice,
+  isPresetAvatar,
   normalizeChimePreset,
   pickAvatarTarget,
   prepareAvatarImage,
+  presetAvatarImageUrl,
   uint8ArrayToBase64,
   type ModelContextLike,
   type WebmcpRegisteredTool,
@@ -174,6 +179,13 @@ describe('PCM, Chime & AvatarImage helpers', () => {
     expect(synth.cycleMode()).toBe('subtle');
     expect(synth.cycleMode()).toBe('off');
     expect(synth.cycleMode()).toBe('soft');
+
+    expect(PRESET_AVATARS).toContain('Kira');
+    expect(isPresetAvatar('Kira')).toBe(true);
+    expect(isPresetAvatar('Aoede')).toBe(false);
+    expect(isPrebuiltVoice('Aoede')).toBe(true);
+    expect(defaultVoiceForAvatar('Kira')).toBe('Aoede');
+    expect(presetAvatarImageUrl('Carmen')).toContain('carmen_2.png');
   });
 
   it('crops square/portrait sources to 704x1280 and landscape sources to 1280x704', async () => {
@@ -393,7 +405,8 @@ describe('LiveSession & @ghchinoy/livebridge/lit', () => {
         'Canvas updated to nominal.',
       );
 
-      // Verify standalone LiveSession graceful terminate sends control frame:
+      // Verify standalone LiveSession gates mic audio until first server message,
+      // and sends graceful terminate control frame:
       const standalone = new LiveSession({ mode: 'audio' });
       await standalone.connect({
         url: 'ws://localhost/ws',
@@ -401,8 +414,17 @@ describe('LiveSession & @ghchinoy/livebridge/lit', () => {
       });
       const ws2 = MockWebSocket.instances[1];
       ws2.open();
+      standalone.socket.sendAudioChunk('AAAA');
+      expect(ws2.sent.length).toBe(0);
+      ws2.emitJson({
+        type: 'session_info',
+        mode: 'audio',
+        model: 'gemini-3.8-live',
+      });
+      standalone.socket.sendAudioChunk('AAAA');
+      expect(ws2.sent.length).toBe(1);
       standalone.terminate();
-      expect(JSON.parse(ws2.sent[0])).toEqual({
+      expect(JSON.parse(ws2.sent[1])).toEqual({
         type: 'control',
         action: 'terminate',
       });

@@ -21,9 +21,12 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gorilla/websocket"
 )
+
+const maxCloseReasonBytes = 120
 
 // SafeConn wraps a gorilla/websocket.Conn with a write mutex. Gorilla allows
 // only one concurrent writer, while a Live switchboard writes from the upstream
@@ -75,16 +78,31 @@ func (s *SafeConn) ReadMessage() (messageType int, p []byte, err error) {
 	return s.conn.ReadMessage()
 }
 
-// WriteClose sends an RFC 6455 close control frame with a 1-second deadline so
-// an unresponsive peer cannot stall session teardown.
+// WriteClose sends an RFC 6455 close control frame (truncating reason safely to
+// fit RFC 6455's 125-byte control-frame payload limit) with a 1-second deadline
+// so an unresponsive peer cannot stall session teardown.
 func (s *SafeConn) WriteClose(code int, reason string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.conn.WriteControl(
 		websocket.CloseMessage,
-		websocket.FormatCloseMessage(code, reason),
+		websocket.FormatCloseMessage(code, truncateUTF8Bytes(reason, maxCloseReasonBytes)),
 		time.Now().Add(time.Second),
 	)
+}
+
+// WriteCloseAndDrain writes an RFC 6455 close frame and briefly drains inbound
+// frames (up to 75ms) before the caller closes the underlying TCP socket,
+// preventing dev proxies (such as Vite's ws http-proxy) from hitting
+// Socket.writeAfterFIN when pre-dial validation or upstream setup fails.
+func (s *SafeConn) WriteCloseAndDrain(code int, reason string) {
+	_ = s.WriteClose(code, reason)
+	_ = s.conn.SetReadDeadline(time.Now().Add(75 * time.Millisecond))
+	for {
+		if _, _, err := s.conn.ReadMessage(); err != nil {
+			return
+		}
+	}
 }
 
 // Close closes the underlying network connection immediately, unblocking any
@@ -121,4 +139,15 @@ func (g *TerminateGate) OnTurnComplete() bool {
 		return false
 	}
 	return g.terminating.Load()
+}
+
+func truncateUTF8Bytes(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+	cut := maxBytes
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
 }

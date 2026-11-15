@@ -312,7 +312,7 @@ function p(e) {
 }
 var m = class {
 	constructor() {
-		this.status = "Idle", this.isTerminating = !1, this.sessionMode = "", this.sessionModel = "", this.sessionLocation = "", this.transcriptAssembler = new d(), this.ws = null, this.options = null, this.terminateTimeoutId = null, this.hasNotifiedDisconnect = !1, this.limitReached = !1, this.hadErrorEvent = !1;
+		this.status = "Idle", this.isTerminating = !1, this.sessionMode = "", this.sessionModel = "", this.sessionLocation = "", this.transcriptAssembler = new d(), this.ws = null, this.options = null, this.terminateTimeoutId = null, this.hasNotifiedDisconnect = !1, this.limitReached = !1, this.hadErrorEvent = !1, this.upstreamReady = !1;
 	}
 	get isConnected() {
 		return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
@@ -321,13 +321,13 @@ var m = class {
 		return this.transcriptAssembler.entries;
 	}
 	connect(e) {
-		this.cleanup(), this.options = e, this.status = "Connecting...", this.transcriptAssembler.reset(), this.isTerminating = !1, this.sessionMode = "", this.sessionModel = "", this.sessionLocation = "", this.hasNotifiedDisconnect = !1, this.limitReached = !1, this.hadErrorEvent = !1, this.options.onStateChange?.();
+		this.cleanup(), this.options = e, this.status = "Connecting...", this.transcriptAssembler.reset(), this.isTerminating = !1, this.sessionMode = "", this.sessionModel = "", this.sessionLocation = "", this.hasNotifiedDisconnect = !1, this.limitReached = !1, this.hadErrorEvent = !1, this.upstreamReady = e.gateRealtimeMediaOnReady === !1, this.options.onStateChange?.();
 		let t = e.url ?? this.resolveEndpointUrl(e.endpoint), n = new WebSocket(t);
 		n.binaryType = "arraybuffer", this.ws = n, n.onopen = () => {
 			this.ws === n && (this.status = "Connected", this.options?.onStateChange?.(), e.initialPayload !== void 0 && n.send(JSON.stringify(e.initialPayload)));
 		}, n.onmessage = (t) => {
 			if (this.ws === n) {
-				if (t.data instanceof ArrayBuffer) e.onBinaryFrame?.(t.data);
+				if (this.upstreamReady = !0, t.data instanceof ArrayBuffer) e.onBinaryFrame?.(t.data);
 				else try {
 					let e = JSON.parse(t.data);
 					this.handleJsonMessage(e);
@@ -352,14 +352,14 @@ var m = class {
 		this.ws && this.ws.readyState === WebSocket.OPEN && this.ws.send(JSON.stringify(e));
 	}
 	sendAudioChunk(e) {
-		this.sendPayload({
+		this.upstreamReady && this.sendPayload({
 			type: "audio",
 			mimeType: "audio/pcm;rate=16000",
 			data: e
 		});
 	}
 	sendVideoFrame(e, t = "image/jpeg") {
-		this.sendPayload({
+		this.upstreamReady && this.sendPayload({
 			type: "video",
 			mimeType: t,
 			data: e
@@ -839,26 +839,63 @@ var y = class {
 	emitChange() {
 		this.initOpts.onStateChange?.(), this.dispatchEvent(new Event("change"));
 	}
+}, C = "https://www.gstatic.com/pantheon/images/aiplatform/vertex_ai_studio/avatars", w = [
+	"Ben",
+	"Carmen",
+	"Ingrid",
+	"Jay",
+	"Kai",
+	"Kira",
+	"Leo",
+	"Paul",
+	"Piper",
+	"Sam",
+	"Vera"
+], T = /* @__PURE__ */ "Achernar.Achird.Algenib.Algieba.Alnilam.Aoede.Autonoe.Callirrhoe.Charon.Despina.Enceladus.Erinome.Fenrir.Gacrux.Iapetus.Kore.Laomedeia.Leda.Orus.Puck.Pulcherrima.Rasalgethi.Sadachbia.Sadaltager.Schedar.Sulafat.Umbriel.Vindemiatrix.Zephyr.Zubenelgenubi".split("."), E = {
+	Ben: "Puck",
+	Carmen: "Laomedeia",
+	Ingrid: "Kore",
+	Jay: "Puck",
+	Kai: "Fenrir",
+	Kira: "Aoede",
+	Leo: "Orus",
+	Paul: "Charon",
+	Piper: "Autonoe",
+	Sam: "Schedar",
+	Vera: "Erinome"
 };
+function D(e) {
+	return w.includes(e.trim());
+}
+function O(e) {
+	return T.includes(e.trim());
+}
+function k(e) {
+	return E[e.trim()] ?? "";
+}
+function A(e) {
+	let t = e.trim().toLowerCase();
+	return `${C}/${t === "carmen" ? "carmen_2.png" : `${t}.png`}`;
+}
 // ts/webmcp-host.ts
-function C(e = typeof document < "u" ? document : void 0) {
+function j(e = typeof document < "u" ? document : void 0) {
 	if (!e) return null;
 	let t = e.modelContext;
 	return t && typeof t.registerTool == "function" && typeof t.getTools == "function" && typeof t.executeTool == "function" ? t : null;
 }
-var w = class extends Error {
+var M = class extends Error {
 	constructor(e) {
 		super(e), this.name = "WebmcpToolError";
 	}
-}, T = class extends Event {
+}, N = class extends Event {
 	constructor(e, t, n, r, i, a) {
 		super("call"), this.caller = e, this.name = t, this.args = n, this.result = r, this.ms = i, this.imageDataUrl = a;
 	}
 };
-function E(e) {
+function P(e) {
 	return JSON.stringify(e, (e, t) => t && typeof t == "object" && !Array.isArray(t) ? Object.fromEntries(Object.entries(t).sort(([e], [t]) => e < t ? -1 : +(e > t))) : t);
 }
-function D(e) {
+function F(e) {
 	let t = {
 		...e.readOnly ? { readOnlyHint: !0 } : {},
 		...e.consequential ? { consequentialHint: !0 } : {},
@@ -866,7 +903,7 @@ function D(e) {
 	};
 	return Object.keys(t).length ? t : void 0;
 }
-function O(e) {
+function I(e) {
 	let t = e;
 	if (typeof t == "string") try {
 		t = JSON.parse(t);
@@ -875,8 +912,8 @@ function O(e) {
 	}
 	return t && typeof t == "object" && !Array.isArray(t) ? t : null;
 }
-var k = /parse input arguments|not of type 'object'/i, A = class extends EventTarget {
-	constructor(e = (e) => ({ signal: e }), t = C()) {
+var L = /parse input arguments|not of type 'object'/i, R = class extends EventTarget {
+	constructor(e = (e) => ({ signal: e }), t = j()) {
 		super(), this.running = /* @__PURE__ */ new Set(), this.externalCalls = 0, this.diagnostics = {
 			schemaType: "",
 			argsForm: null,
@@ -894,9 +931,9 @@ var k = /parse input arguments|not of type 'object'/i, A = class extends EventTa
 					name: t.name,
 					description: t.description,
 					inputSchema: t.inputSchema,
-					annotations: D(t),
+					annotations: F(t),
 					execute: async (e, n) => {
-						let r = await this.run(t, e == null ? {} : O(e) ?? e, n?.signal ?? new AbortController().signal, this.pendingOwn.get(t.name)?.shift()?.caller ?? "external");
+						let r = await this.run(t, e == null ? {} : I(e) ?? e, n?.signal ?? new AbortController().signal, this.pendingOwn.get(t.name)?.shift()?.caller ?? "external");
 						return r.imageDataUrl && this.lastImageByTool.set(t.name, r.imageDataUrl), r.result;
 					}
 				}, { signal: e.signal }), this.diagnostics.conflicts = this.diagnostics.conflicts.filter((e) => !e.startsWith(`${t.name}:`));
@@ -927,7 +964,7 @@ var k = /parse input arguments|not of type 'object'/i, A = class extends EventTa
 					description: e.description
 				};
 				if (e.inputSchema !== void 0 && e.inputSchema !== "") {
-					let n = O(e.inputSchema);
+					let n = I(e.inputSchema);
 					if (!n) {
 						this.diagnostics.dropped.push(`${e.name}: unparseable inputSchema`);
 						continue;
@@ -953,14 +990,14 @@ var k = /parse input arguments|not of type 'object'/i, A = class extends EventTa
 			if (this.mc) {
 				let r = typeof window < "u" ? window : void 0, a = (await this.mc.getTools()).find((t) => t.name === e && (!t.window || t.window === r));
 				if (!a) return { result: { error: `Tool ${e} is not available right now.` } };
-				let o = a.inputSchema === void 0 || a.inputSchema === "" ? void 0 : O(a.inputSchema) ?? void 0;
+				let o = a.inputSchema === void 0 || a.inputSchema === "" ? void 0 : I(a.inputSchema) ?? void 0;
 				if (!this.isOurs(a, o)) return { result: { error: `Tool ${e} on this page was not registered by this app; refusing to run it.` } };
 				this.lastImageByTool.delete(e);
 				let s = this.pendingOwn.get(e) ?? [];
 				s.push(i), this.pendingOwn.set(e, s);
 				let c = await this.executeViaModelContext(a, t, n), l = this.lastImageByTool.get(e);
 				return this.lastImageByTool.delete(e), {
-					result: j(c),
+					result: z(c),
 					imageDataUrl: l
 				};
 			}
@@ -975,7 +1012,7 @@ var k = /parse input arguments|not of type 'object'/i, A = class extends EventTa
 	}
 	isOurs(e, t) {
 		let n = this.defs.get(e.name);
-		return !!n && n.description === e.description && E(n.inputSchema ?? null) === E(t ?? null);
+		return !!n && n.description === e.description && P(n.inputSchema ?? null) === P(t ?? null);
 	}
 	async executeViaModelContext(e, t, n) {
 		let r = this.mc, i = this.diagnostics, a = i.argsForm ?? (typeof e.inputSchema == "string" ? "string" : "object"), o = (i) => r.executeTool(e, i === "string" ? JSON.stringify(t) : t, { signal: n });
@@ -984,14 +1021,14 @@ var k = /parse input arguments|not of type 'object'/i, A = class extends EventTa
 			return i.argsForm = a, e;
 		} catch (e) {
 			let t = e?.message || String(e);
-			if (i.argsForm !== null || n.aborted || !k.test(t)) throw e;
+			if (i.argsForm !== null || n.aborted || !L.test(t)) throw e;
 			i.firstError = `${a}: ${t}`;
 			let r = a === "string" ? "object" : "string", s = await o(r);
 			return i.argsForm = r, s;
 		}
 	}
 	async run(e, t, n, r) {
-		let i = typeof t == "object" && t && !Array.isArray(t) && e.coalesceInFlight ? `${e.name}:${E(t)}` : null;
+		let i = typeof t == "object" && t && !Array.isArray(t) && e.coalesceInFlight ? `${e.name}:${P(t)}` : null;
 		if (i) {
 			let e = this.inFlight.get(i);
 			if (e) return e;
@@ -1005,21 +1042,21 @@ var k = /parse input arguments|not of type 'object'/i, A = class extends EventTa
 		this.running.add(e.name), this.dispatchEvent(new Event("running")), r === "external" && this.externalCalls++;
 		let i = performance.now(), a, o;
 		try {
-			if (typeof t != "object" || !t || Array.isArray(t)) throw new w("Arguments must be a JSON object.");
+			if (typeof t != "object" || !t || Array.isArray(t)) throw new M("Arguments must be a JSON object.");
 			let r = await e.execute(t, this.makeContext(n));
 			n.aborted ? a = { error: "cancelled" } : (a = r.result, o = r.imageDataUrl);
 		} catch (t) {
-			n.aborted ? a = { error: "cancelled" } : t instanceof w ? a = { error: t.message } : (console.error(`tool ${e.name}`, t), a = { error: `Internal error in ${e.name}: ${t.message}` });
+			n.aborted ? a = { error: "cancelled" } : t instanceof M ? a = { error: t.message } : (console.error(`tool ${e.name}`, t), a = { error: `Internal error in ${e.name}: ${t.message}` });
 		} finally {
 			this.running.delete(e.name), this.dispatchEvent(new Event("running"));
 		}
-		return this.dispatchEvent(new T(r, e.name, t, a, Math.round(performance.now() - i), o)), {
+		return this.dispatchEvent(new N(r, e.name, t, a, Math.round(performance.now() - i), o)), {
 			result: a,
 			imageDataUrl: o
 		};
 	}
 };
-function j(e) {
+function z(e) {
 	if (e == null || e === "") return {};
 	if (typeof e == "object") return Array.isArray(e) ? { result: e } : e;
 	if (typeof e != "string") return { result: e };
@@ -1031,5 +1068,5 @@ function j(e) {
 	}
 }
 // ts/index.ts
-var M = "0.1.0";
-export { t as AVATAR_LANDSCAPE, e as AVATAR_PORTRAIT, o as CHIME_PRESETS, c as ChimeSynth, l as Fmp4Player, S as LiveSession, m as LiveSocketClient, y as PcmMic, b as PcmPlayer, d as TranscriptAssembler, M as VERSION, x as VisionCapture, T as WebmcpCallEvent, w as WebmcpToolError, A as WebmcpToolHost, D as annotationsFor, O as asObject, p as base64ToArrayBuffer, E as canonicalJSON, v as computeInt16Rms, h as createPcmCaptureContext, f as describeCloseEvent, g as int16ArrayToLittleEndianBytes, C as nativeModelContext, s as normalizeChimePreset, u as parseToolCallItem, n as pickAvatarTarget, r as prepareAvatarImage, i as resizeAndCropImage, a as resizeToMaxDimension, _ as uint8ArrayToBase64 };
+var B = "0.1.1";
+export { t as AVATAR_LANDSCAPE, e as AVATAR_PORTRAIT, o as CHIME_PRESETS, c as ChimeSynth, l as Fmp4Player, S as LiveSession, m as LiveSocketClient, T as PREBUILT_VOICES, w as PRESET_AVATARS, E as PRESET_AVATAR_VOICES, y as PcmMic, b as PcmPlayer, d as TranscriptAssembler, B as VERSION, x as VisionCapture, N as WebmcpCallEvent, M as WebmcpToolError, R as WebmcpToolHost, F as annotationsFor, I as asObject, p as base64ToArrayBuffer, P as canonicalJSON, v as computeInt16Rms, h as createPcmCaptureContext, k as defaultVoiceForAvatar, f as describeCloseEvent, g as int16ArrayToLittleEndianBytes, O as isPrebuiltVoice, D as isPresetAvatar, j as nativeModelContext, s as normalizeChimePreset, u as parseToolCallItem, n as pickAvatarTarget, r as prepareAvatarImage, A as presetAvatarImageUrl, i as resizeAndCropImage, a as resizeToMaxDimension, _ as uint8ArrayToBase64 };
