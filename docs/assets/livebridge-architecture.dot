@@ -1,0 +1,64 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Core LiveBridge switchboard, media pipelines, and WebMCP relay.
+digraph livebridge_architecture {
+  label = "LiveBridge · credential-isolated switchboard & WebMCP loop";
+  rankdir = LR;
+  ranksep = 0.72;
+  nodesep = 0.42;
+  newrank = true;
+
+  subgraph cluster_browser {
+    label = "Browser tab · @ghchinoy/livebridge (0 deps)";
+    class = "accent";
+
+    media   [label="PcmMic · PcmPlayer\nFmp4Player · VisionCapture", class="code"];
+    session [label="LiveSession\n(/lit controller)", class="agent-teal"];
+    host    [label="WebmcpToolHost", class="emphasis code"];
+    mc      [label="document.modelContext", class="code muted"];
+
+    {rank=same; media; mc;}
+    {rank=same; session; host;}
+  }
+
+  subgraph cluster_server {
+    label = "Go server · github.com/ghchinoy/livebridge";
+
+    guard  [label="OriginPolicy + SafeConn\nSessionSpec (1007 guard)", class="code"];
+    bridge [label="livebridge.Bridge\n(TerminateGate · 9m55s cap)", class="primary code"];
+    tools  [label="ToolRunner\n(FuncRegistry + PageRelay)", class="code"];
+    alerts [label="AlertBus\n(FormatUntrustedAlert)", class="store code"];
+
+    {rank=same; tools; alerts;}
+  }
+
+  subgraph cluster_cloud {
+    label = "Google Cloud / Gemini API";
+
+    live [label="gemini-3.8-live\n(24 kHz PCM · fMP4 avatar)", class="external"];
+  }
+
+  media   -> session [label="16 kHz mic\n1 FPS JPEG", dir=both];
+  mc      -> host    [label="registerTool\nexecuteTool", class="code", dir=both];
+  host    -> session [label="tools &\nsnapshots", dir=both];
+
+  session -> guard   [label="WS JSON + binary\nPCM / fMP4", class="primary", dir=both];
+  guard   -> bridge  [class="primary"];
+  bridge  -> tools   [label="dispatch &\ncancel", dir=both];
+  alerts  -> bridge  [label="proactive\nalerts", class="async"];
+
+  bridge  -> live    [label="Bidi gRPC / WS\n(ADC or API key)", class="primary", dir=both];
+  tools   -> live    [label="Video snapshot +\nToolResponse", class="async"];
+}

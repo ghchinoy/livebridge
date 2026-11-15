@@ -109,24 +109,10 @@ go run .
 
 ## Architecture
 
-```text
-┌──────────────────────────────────────────┐          ┌──────────────────────────────────────────┐
-│ Browser (@ghchinoy/livebridge · 11.9 kB) │          │ Go Server (github.com/ghchinoy/livebridge│
-│                                          │  WS JSON │                                          │
-│  LiveSession / LiveSessionController     │◄────────►│  OriginPolicy + SafeConn (16M -> 8M cap) │
-│   ├─ PcmMic (16 kHz AudioWorklet + RMS)  │  + Raw   │  NewFixedHandler / NewDynamicHandler     │
-│   ├─ PcmPlayer (24 kHz + AnalyserNode)   │  Binary  │  SessionSpec -> BuildConnectConfig       │
-│   ├─ Fmp4Player (MSE PTS jump + trim)    │ PCM/fMP4 │  Bridge (TerminateGate + 9m55s cap)      │
-│   ├─ VisionCapture (1 FPS cam / screen)  │          │   ├─ ToolRunner (Go + WebMCP visual)     │
-│   └─ WebmcpToolHost + ChimeSynth         │          │   └─ AlertBus + FormatUntrustedAlert     │
-└──────────────────────────────────────────┘          └────────────────────┬─────────────────────┘
-                                                                           │ Bidi gRPC / WS
-                                                                           ▼ (ADC or API Key)
-                                                              ┌─────────────────────────┐
-                                                              │   Gemini Live Bidi API  │
-                                                              │ (Audio & Avatar Video)  │
-                                                              └─────────────────────────┘
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/livebridge-architecture-dark.webp">
+  <img alt="LiveBridge architecture: Browser tab (@ghchinoy/livebridge + WebmcpToolHost), stateless Go switchboard (OriginPolicy, Bridge, ToolRunner, AlertBus), and Gemini 3.8 Live Bidi stream" src="docs/assets/livebridge-architecture-light.webp">
+</picture>
 
 ### Package Entry Points
 
@@ -174,6 +160,7 @@ Full external applications consuming published `github.com/ghchinoy/livebridge` 
 - **`whiteboard-architect` (Vanilla TypeScript):** Shared `640x400` `<canvas>` combining freehand pointer drawing, WebMCP diagram tools (`SeeVisualResults`), and a 60 FPS `PcmPlayer.analyser` spectrum visualizer.
 - **`bilingual-coach` (React 19):** Idiomatic `useLiveSession` hook exercising multilingual `LanguageCode`, `AdaptationPhrases`, tunable VAD `SilenceDurationMs` pause patience, and live `score_turn` rubric cards.
 - **`pocket-briefing` (Zero-Node Go):** Single-binary CLI voice briefing desk (`livebridge/browser`) watching `./inbox/*.{md,txt}` and `POST /api/memo` webhooks via `AlertBus` + `ChimeSynth`.
+- **`antigravity-voice-desk` (Lit 3 + Gemini Managed Agents):** Stateless voice/avatar front-end (`gemini-3.8-live`) delegating code execution, file generation, and write-only egress-proxied API work to an isolated [Gemini Managed Agents](https://aistudio.google.com/docs/managed-agents-quickstart) Linux sandbox (`antigravity-preview-09-2026`) via SSE + `AlertBus`.
 
 ### 3. Full Studio Reference Application ([Gemini Live Studio](https://github.com/GoogleCloudPlatform/generative-ai/tree/main/gemini/multimodal-live-api/gemini-live-studio))
 

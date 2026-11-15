@@ -16,10 +16,17 @@ Practical decision guide and architectural explanation for engineers building re
 - [3. Seven Gemini Live Sharp Edges Solved Under the Hood](#3-seven-gemini-live-sharp-edges-solved-under-the-hood)
 - [4. Testing Your Application Without Spending Quota](#4-testing-your-application-without-spending-quota)
 - [5. Deploying to Cloud Run & Reverse Proxies](#5-deploying-to-cloud-run--reverse-proxies)
+- [6. Pairing `livebridge` with Gemini Managed Agents](#6-pairing-livebridge-with-gemini-managed-agents)
+- [7. Official Gemini 3.8 Live & Reference Resources](#7-official-gemini-38-live--reference-resources)
 
 ---
 
 ## 1. Architecture Decision Matrix
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/livebridge-architecture-dark.webp">
+  <img alt="LiveBridge switchboard architecture across Browser Tab, Go Server, and Gemini 3.8 Live" src="assets/livebridge-architecture-light.webp">
+</picture>
 
 Before writing code, pick one option from each of the four axes below. Every combination speaks the exact same WebSocket wire protocol.
 
@@ -197,7 +204,23 @@ Pass `fakeConnector{s}` into `NewFixedHandler` / `NewDynamicHandler`, wrap it in
 
 ---
 
-## 6. Official Gemini 3.8 Live & Reference Resources
+## 6. Pairing `livebridge` with Gemini Managed Agents
+
+Google-hosted [Gemini Managed Agents](https://aistudio.google.com/docs/managed-agents-quickstart) sandboxes (`antigravity-preview-09-2026`) run inside isolated Linux VMs with **outbound-only** networking (`POST /v1beta/interactions` SSE data plane and a 15-minute idle auto-stop), so they do not accept inbound browser WebSockets directly.
+
+Instead, pairing **`livebridge` as the thin, stateless Realtime Voice/Avatar Edge** with **Managed Agents as the Zero-Trust Code & Credential Sandbox** gives you sub-second voice/avatar responsiveness *and* isolated autonomous execution:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/managed-agents-split-dark.webp">
+  <img alt="Fast voice edge (livebridge + gemini-3.8-live) paired with Gemini Managed Agents sandbox (antigravity-preview-09-2026 + write-only credentials egress proxy)" src="assets/managed-agents-split-light.webp">
+</picture>
+
+- **Zero shell or 3rd-party secrets on the `livebridge` server:** Your Go container stays distroless and stateless; GitHub PATs, OAuth2 refresh tokens, and API keys live in Managed Agents' write-only [Credentials API (`/v1beta/credentials`)](https://aistudio.google.com/docs/agent-credentials) and are injected on the wire by Google's egress proxy.
+- **Async SSE progress via `AlertBus`:** Long-running sandbox tasks (`10–90s`) stream `InteractionSSEStreamEvent`s in a background goroutine, publishing milestone summaries to `AlertBus` (`ChimeSynth` + spoken updates) and downloading generated charts from `/v1beta/environments/{id}/files/...` for UI display and `SendRealtime({Video})` visual inspection. See `samples/antigravity-voice-desk` in [`ghchinoy/livebridge-examples`](https://github.com/ghchinoy/livebridge-examples).
+
+---
+
+## 7. Official Gemini 3.8 Live & Reference Resources
 
 - **[Gemini 3.8 Live Developer Guide (Google Cloud)](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-3-8-live)** — Authoritative guide to Bidi streaming, talking video avatars, custom avatar image requirements, replicated voice, and proactive audio.
 - **[Gemini 3.8 Live Model Card (Google Cloud)](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-8-live)** — Endpoint regions, supported input/output modalities, and session caps.

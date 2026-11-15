@@ -15,8 +15,11 @@
 # livebridge: Paired Go (github.com/ghchinoy/livebridge) & TypeScript
 # (@ghchinoy/livebridge) libraries + standalone examples for Gemini Live.
 
-.PHONY: help build bundle check-bundle check-version lint license license-check \
+.PHONY: help build bundle check-bundle check-version diagrams lint license license-check \
 	test test-go test-ts test-examples test-live
+
+LUMINOUS_THEME ?= ../graphviz-style/theme/luminous.gvpr
+DOT_SOURCES := $(wildcard docs/assets/*.dot)
 
 EXAMPLES_GO := examples/01-minimal-voice examples/02-avatar-desk \
 	examples/03-code-assistant examples/04-ops-watchtower
@@ -25,6 +28,7 @@ EXAMPLES_FE := examples/02-avatar-desk/frontend examples/04-ops-watchtower/front
 LICENSE_IGNORES := -ignore '**/node_modules/**' -ignore '**/dist/**' \
 	-ignore '.beads/**' -ignore '.dolt/**' -ignore '**/*.json' \
 	-ignore '**/*.yaml' -ignore '**/*.yml' -ignore '**/*.md' \
+	-ignore '**/*.webp' -ignore '**/*.dot' \
 	-ignore 'go.work*' -ignore 'LICENSE'
 
 help:
@@ -34,6 +38,7 @@ help:
 	@echo "  make bundle        - Compile TS ESM (dist/) + embedded browser bundle (browser/dist/)"
 	@echo "  make check-bundle  - Verify browser/dist/livebridge.esm.js is fresh & framework-free"
 	@echo "  make check-version - Verify version.go, ts/index.ts, and package.json match"
+	@echo "  make diagrams      - Render docs/assets/*.dot to light/dark .webp (needs graphviz-style)"
 	@echo "  make build         - Build root libraries and all 4 standalone examples"
 	@echo ""
 	@echo "Quality Gates:"
@@ -46,6 +51,13 @@ help:
 
 bundle:
 	@npm run build
+
+diagrams:
+	@for f in $(DOT_SOURCES); do \
+		base="$${f%.dot}"; \
+		gvpr -c -f "$(LUMINOUS_THEME)" -a light "$$f" | dot -Twebp -o "$${base}-light.webp"; \
+		gvpr -c -f "$(LUMINOUS_THEME)" -a dark  "$$f" | dot -Twebp -o "$${base}-dark.webp"; \
+	done
 
 check-bundle:
 	@before="$$(shasum -a 256 browser/dist/livebridge.esm.js)"; \
