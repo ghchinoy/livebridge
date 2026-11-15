@@ -7,5 +7,3 @@ use (
 	./examples/03-code-assistant
 	./examples/04-ops-watchtower
 )
-
-replace github.com/ghchinoy/livebridge v0.1.0 => .
