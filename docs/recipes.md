@@ -41,7 +41,7 @@ See [`examples/01-minimal-voice/`](../examples/01-minimal-voice/).
 
 ### Backend (`NewDynamicHandler`)
 
-`BuildConnectConfig` automatically sets `ResponseModalities: [VIDEO]` (never `[AUDIO, VIDEO]`) and validates custom avatar dimensions (`>=704x1280` portrait or `>=1280x704` landscape, non-square) before dialing:
+Per the [Google Cloud Gemini 3.8 Live Guide](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-3-8-live) ([Model Card](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-8-live)), `BuildConnectConfig` automatically sets `ResponseModalities: [VIDEO]` (never `[AUDIO, VIDEO]`) and validates custom avatar dimensions (`>=704x1280` portrait or `>=1280x704` landscape, non-square) before dialing:
 
 ```go
 mux.Handle("GET /ws", livebridge.NewDynamicHandler(livebridge.DynamicHandlerConfig{
@@ -201,4 +201,4 @@ FormatAlert: func(a livebridge.Alert) (string, any) {
 }
 ```
 
-On the browser side, `LiveSession` automatically plays a warm procedural Web Audio cue via `ChimeSynth` and calls `PcmPlayer.deferPlayback(cueSeconds)` so spoken audio never overlaps the notification tone. See [`examples/04-ops-watchtower/`](../examples/04-ops-watchtower/) and the external showcase apps in [`ghchinoy/livebridge-examples`](https://github.com/ghchinoy/livebridge-examples).
+On the browser side, `LiveSession` automatically plays a warm procedural Web Audio cue via `ChimeSynth` and calls `PcmPlayer.deferPlayback(cueSeconds)` so spoken audio never overlaps the notification tone. See [`examples/04-ops-watchtower/`](../examples/04-ops-watchtower/), the external showcase apps in [`ghchinoy/livebridge-examples`](https://github.com/ghchinoy/livebridge-examples), and the full [Gemini Live Studio reference app](https://github.com/GoogleCloudPlatform/generative-ai/tree/main/gemini/multimodal-live-api/gemini-live-studio) (plus [Google AI Studio `gemini-3.8-live` docs](https://aistudio.google.com/docs/models/gemini-3.8-live) for API-key audio deployments).

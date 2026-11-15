@@ -50,8 +50,8 @@ Before writing code, pick one option from each of the four axes below. Every com
 
 | Credential Source | Audio (`ModeAudio`) | Tools & Search | Talking Video Avatars (`ModeAvatar`) |
 | :--- | :-: | :-: | :-: |
-| **Google Cloud ADC (`GOOGLE_CLOUD_PROJECT`)** | Yes (`us-central1`) | Yes | **Yes** (`gemini-3.8-live` in `us-central1`; custom avatars require project allowlisting) |
-| **Gemini API Key (`GEMINI_API_KEY`)** | Yes | Yes | No (Vertex AI only) |
+| **Google Cloud ADC (`GOOGLE_CLOUD_PROJECT`)** — [Guide](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-3-8-live) · [Model Card](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-8-live) | Yes (`us-central1`) | Yes | **Yes** (`gemini-3.8-live` in `us-central1`; custom avatars require project allowlisting) |
+| **Gemini API Key (`GEMINI_API_KEY`)** — [AI Studio Docs](https://aistudio.google.com/docs/models/gemini-3.8-live) | Yes | Yes | No (Google Cloud only) |
 
 ---
 
@@ -194,3 +194,13 @@ Pass `fakeConnector{s}` into `NewFixedHandler` / `NewDynamicHandler`, wrap it in
 1. **Request timeout (`>= 600s`):** Gemini Live sessions run up to 10 minutes (`9m55s` `DefaultSessionCap`). Set Cloud Run `--timeout=600` (or `900`) so the ingress proxy does not sever active WebSockets at 300 seconds.
 2. **Origins (`ALLOWED_ORIGINS`):** Same-origin Cloud Run deployments work with zero configuration. If your frontend is hosted on a separate domain (such as Firebase Hosting), set `ALLOWED_ORIGINS="https://your-frontend.web.app"`.
 3. **Multi-instance `AlertBus`:** `AlertBus` fans out across all WebSocket sessions connected to the same Go process. If scaling beyond a single Cloud Run instance and broadcasting webhooks via `AlertBus`, back the webhook publisher with Cloud Pub/Sub or Redis so every instance receives published alerts.
+
+---
+
+## 6. Official Gemini 3.8 Live & Reference Resources
+
+- **[Gemini 3.8 Live Developer Guide (Google Cloud)](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-3-8-live)** — Authoritative guide to Bidi streaming, talking video avatars, custom avatar image requirements, replicated voice, and proactive audio.
+- **[Gemini 3.8 Live Model Card (Google Cloud)](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-8-live)** — Endpoint regions, supported input/output modalities, and session caps.
+- **[Gemini 3.8 Live on Google AI Studio](https://aistudio.google.com/docs/models/gemini-3.8-live)** — Using `gemini-3.8-live` with a Gemini Developer API key (`GEMINI_API_KEY`).
+- **[Gemini Live Studio (`GoogleCloudPlatform/generative-ai`)](https://github.com/GoogleCloudPlatform/generative-ai/tree/main/gemini/multimodal-live-api/gemini-live-studio)** — Full-featured reference application showcasing `livebridge`'s switchboard and browser media architecture at scale.
+- **[`ghchinoy/livebridge-examples`](https://github.com/ghchinoy/livebridge-examples)** — External multi-framework showcase apps (Lit 3, Vanilla TS, React 19, and Zero-Node Go).

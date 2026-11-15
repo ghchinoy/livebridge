@@ -175,6 +175,10 @@ Full external applications consuming published `github.com/ghchinoy/livebridge` 
 - **`bilingual-coach` (React 19):** Idiomatic `useLiveSession` hook exercising multilingual `LanguageCode`, `AdaptationPhrases`, tunable VAD `SilenceDurationMs` pause patience, and live `score_turn` rubric cards.
 - **`pocket-briefing` (Zero-Node Go):** Single-binary CLI voice briefing desk (`livebridge/browser`) watching `./inbox/*.{md,txt}` and `POST /api/memo` webhooks via `AlertBus` + `ChimeSynth`.
 
+### 3. Full Studio Reference Application ([Gemini Live Studio](https://github.com/GoogleCloudPlatform/generative-ai/tree/main/gemini/multimodal-live-api/gemini-live-studio))
+
+For a complete, end-to-end production reference application—including persona management, custom avatar image synthesis, settings persistence, and WCAG-audited components—see **[Gemini Live Studio in `GoogleCloudPlatform/generative-ai`](https://github.com/GoogleCloudPlatform/generative-ai/tree/main/gemini/multimodal-live-api/gemini-live-studio)**, where `livebridge`'s switchboard and browser media architecture originated.
+
 ---
 
 ## Local Development Setup
@@ -184,8 +188,8 @@ Full external applications consuming published `github.com/ghchinoy/livebridge` 
 - **Go** `1.26` or newer (`go version`)
 - **Node.js** `22.23.4` or newer and **npm** `10+` (`node -v`)
 - **Authentication** (to run examples or `make test-live`):
-  - **Google Cloud (recommended; required for video avatars):** `gcloud auth application-default login` and `export GOOGLE_CLOUD_PROJECT="your-project-id"`
-  - **Gemini Developer API (audio & tool sessions):** `export GEMINI_API_KEY="your-api-key"`
+  - **Google Cloud ([Gemini 3.8 Live Guide](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-3-8-live); recommended, required for video avatars):** `gcloud auth application-default login` and `export GOOGLE_CLOUD_PROJECT="your-project-id"`
+  - **Gemini Developer API ([AI Studio `gemini-3.8-live` Docs](https://aistudio.google.com/docs/models/gemini-3.8-live); audio & tool sessions):** `export GEMINI_API_KEY="your-api-key"`
 
 ### Clone, Install, Test & Run
 
@@ -255,9 +259,18 @@ npm publish --access public
 
 ## Documentation
 
+### `livebridge` Guides & Specs
+
 - **[Developer Guide (Architecture & Implementor Walkthrough)](docs/developers-guide.md)** — Decision matrix (`NewFixedHandler` vs `NewDynamicHandler`, `livebridge/browser` vs `@ghchinoy/livebridge` vs `/lit`), step-by-step build walkthrough, the 7 under-the-hood invariants, hermetic testing without quota, and Cloud Run deployment settings.
 - **[Recipes & How-To Guide](docs/recipes.md)** — Voice, Talking Avatars, Server Tools, WebMCP Visual Snapshots, Proactive `AlertBus`, and Lit 3 `ReactiveController`s.
 - **[Wire Protocol & API Reference](docs/wire-protocol.md)** — JSON control frames, binary PCM / fMP4 framing, and RFC 6455 close codes.
+
+### Official Gemini 3.8 Live & Reference Application Resources
+
+- **[Gemini 3.8 Live Developer Guide (Google Cloud)](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-3-8-live)** — Bidi streaming, talking video avatars, custom avatars, replicated voice, and proactivity on Google Cloud.
+- **[Gemini 3.8 Live Model Card & Specifications (Google Cloud)](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-8-live)** — Regional availability (`us-central1`), supported modalities, and token/session limits.
+- **[Gemini 3.8 Live Documentation (Google AI Studio)](https://aistudio.google.com/docs/models/gemini-3.8-live)** — Gemini Developer API (`GEMINI_API_KEY`) usage for real-time voice and tool sessions.
+- **[Gemini Live Studio (`GoogleCloudPlatform/generative-ai`)](https://github.com/GoogleCloudPlatform/generative-ai/tree/main/gemini/multimodal-live-api/gemini-live-studio)** — Full Google Cloud reference studio application from which `livebridge` was extracted.
 
 ---
 
