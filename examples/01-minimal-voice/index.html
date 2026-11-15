@@ -1,0 +1,160 @@
+<!doctype html>
+<!--
+ Copyright 2026 Google LLC
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>01 · Minimal Voice — livebridge</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #0f172a;
+        --panel: #1e293b;
+        --border: #334155;
+        --text: #f8fafc;
+        --muted: #94a3b8;
+        --accent: #38bdf8;
+        --danger: #f87171;
+      }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+      }
+      main {
+        width: min(640px, 92vw);
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 1.5rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+      header { display: flex; justify-content: space-between; align-items: center; }
+      h1 { font-size: 1.15rem; margin: 0; }
+      .badge { font-size: 0.8rem; color: var(--muted); font-family: ui-monospace, monospace; }
+      .controls { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; }
+      button {
+        padding: 0.55rem 1rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: #0f172a;
+        color: var(--text);
+        cursor: pointer;
+        font-weight: 600;
+      }
+      button.primary { background: var(--accent); color: #082f49; border-color: transparent; }
+      button.danger { background: var(--danger); color: #450a0a; border-color: transparent; }
+      button:disabled { opacity: 0.45; cursor: not-allowed; }
+      .meter { flex: 1; height: 8px; background: #0f172a; border-radius: 999px; overflow: hidden; min-width: 90px; }
+      .meter > div { height: 100%; width: 0%; background: var(--accent); transition: width 80ms linear; }
+      #transcript {
+        height: 300px;
+        overflow-y: auto;
+        background: #0f172a;
+        border-radius: 12px;
+        padding: 0.9rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+      }
+      .turn { padding: 0.55rem 0.8rem; border-radius: 10px; max-width: 85%; line-height: 1.45; font-size: 0.92rem; }
+      .turn.user { align-self: flex-end; background: #1d4ed8; }
+      .turn.assistant { align-self: flex-start; background: #334155; }
+      form { display: flex; gap: 0.5rem; }
+      input {
+        flex: 1;
+        padding: 0.55rem 0.85rem;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: #0f172a;
+        color: var(--text);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>01 · Minimal Voice</h1>
+        <span id="status" class="badge">Idle</span>
+      </header>
+      <div class="controls">
+        <button id="start" class="primary">Start Voice</button>
+        <button id="mic" disabled>Mute Mic</button>
+        <button id="speaker" disabled>Mute Audio</button>
+        <button id="end" class="danger" disabled>End Session</button>
+        <div class="meter" aria-label="Microphone level"><div id="rms"></div></div>
+      </div>
+      <div id="transcript" aria-live="polite"></div>
+      <form id="text-form">
+        <input id="text-input" placeholder="Or type a message during the session..." autocomplete="off" />
+        <button type="submit" id="send" disabled>Send</button>
+      </form>
+    </main>
+
+    <script type="module">
+      import { LiveSession } from '/livebridge.js';
+
+      const el = (id) => document.getElementById(id);
+      const session = new LiveSession({ mode: 'audio' });
+
+      session.addEventListener('rms', (e) => {
+        el('rms').style.width = `${Math.min(100, Math.round(e.detail * 260))}%`;
+      });
+
+      session.addEventListener('change', () => {
+        const active = session.isConnected && !session.isTerminating;
+        el('status').textContent = session.sessionModel
+          ? `${session.status} · ${session.sessionModel}`
+          : session.status;
+        el('start').disabled = session.isConnected || session.isTerminating;
+        el('mic').disabled = !active;
+        el('mic').textContent = session.isRecording ? 'Mute Mic' : 'Unmute Mic';
+        el('speaker').disabled = !active;
+        el('speaker').textContent = session.isMuted ? 'Unmute Audio' : 'Mute Audio';
+        el('end').disabled = !active;
+        el('send').disabled = !active;
+
+        const pane = el('transcript');
+        pane.replaceChildren(
+          ...session.transcript.map((item) => {
+            const div = document.createElement('div');
+            div.className = `turn ${item.type}`;
+            div.textContent = item.text;
+            return div;
+          }),
+        );
+        pane.scrollTop = pane.scrollHeight;
+      });
+
+      el('start').onclick = () => session.connect({ endpoint: '/ws/live' });
+      el('mic').onclick = () => session.toggleMic();
+      el('speaker').onclick = () => session.toggleMute();
+      el('end').onclick = () => session.terminate();
+      el('text-form').onsubmit = (e) => {
+        e.preventDefault();
+        const input = el('text-input');
+        if (session.sendText(input.value)) input.value = '';
+      };
+    </script>
+  </body>
+</html>

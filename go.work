@@ -1,0 +1,11 @@
+go 1.26.1
+
+use (
+	.
+	./examples/01-minimal-voice
+	./examples/02-avatar-desk
+	./examples/03-code-assistant
+	./examples/04-ops-watchtower
+)
+
+replace github.com/ghchinoy/livebridge v0.1.0 => .

@@ -1,0 +1,193 @@
+<!doctype html>
+<!--
+ Copyright 2026 Google LLC
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>03 · Code Assistant — livebridge</title>
+    <style>
+      :root {
+        --bg: #0b1120;
+        --panel: #111827;
+        --border: #1e293b;
+        --text: #f1f5f9;
+        --muted: #94a3b8;
+        --accent: #38bdf8;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        min-height: 100vh;
+        padding: 1.2rem;
+      }
+      .grid {
+        max-width: 1180px;
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: 1fr 440px;
+        gap: 1.1rem;
+      }
+      @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.8rem;
+      }
+      .toolbar { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+      select, input, button {
+        padding: 0.48rem 0.85rem;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: #020617;
+        color: var(--text);
+        font-size: 0.88rem;
+      }
+      button { cursor: pointer; font-weight: 600; border-radius: 999px; }
+      button.primary { background: var(--accent); color: #082f49; border-color: transparent; }
+      button:disabled { opacity: 0.45; cursor: not-allowed; }
+      #transcript {
+        height: 460px;
+        overflow-y: auto;
+        background: #020617;
+        border-radius: 10px;
+        padding: 0.85rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.55rem;
+      }
+      .turn { padding: 0.55rem 0.8rem; border-radius: 10px; max-width: 88%; font-size: 0.9rem; line-height: 1.45; }
+      .turn.user { align-self: flex-end; background: #1d4ed8; }
+      .turn.assistant { align-self: flex-start; background: #1e293b; }
+      .turn.tool { align-self: stretch; background: #0f172a; border: 1px solid #334155; font-family: ui-monospace, monospace; font-size: 0.8rem; }
+      video#avatar { width: 100%; border-radius: 10px; background: #000; display: none; aspect-ratio: 9 / 16; max-height: 320px; object-fit: cover; }
+      pre#inspector {
+        margin: 0;
+        flex: 1;
+        min-height: 260px;
+        max-height: 420px;
+        overflow: auto;
+        background: #020617;
+        border-radius: 10px;
+        padding: 0.85rem;
+        font-size: 0.78rem;
+        line-height: 1.45;
+      }
+      img#diagram { width: 100%; border-radius: 10px; display: none; background: #fff; padding: 0.5rem; }
+    </style>
+  </head>
+  <body>
+    <div class="grid">
+      <section class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center">
+          <strong>03 · Code Assistant</strong>
+          <span id="status" style="font-size: 0.8rem; color: var(--muted)">Idle</span>
+        </div>
+        <div class="toolbar">
+          <select id="avatar-mode">
+            <option value="">Voice Only (24 kHz PCM)</option>
+            <option value="Kira">Avatar: Kira (fMP4 Video)</option>
+            <option value="Puck">Avatar: Puck (fMP4 Video)</option>
+          </select>
+          <button id="start" class="primary">Connect</button>
+          <button id="mic" disabled>Mute Mic</button>
+          <button id="end" disabled>End Session</button>
+        </div>
+        <div id="transcript" aria-live="polite"></div>
+        <form id="prompt-form" class="toolbar">
+          <input id="prompt-input" style="flex: 1" placeholder="e.g. List files in the root directory and diagram the architecture" />
+          <button type="submit" id="send" disabled>Send</button>
+        </form>
+      </section>
+
+      <aside class="card">
+        <strong>Workspace &amp; Diagram Inspector</strong>
+        <video id="avatar" playsinline autoplay></video>
+        <img id="diagram" alt="Generated architecture diagram" />
+        <pre id="inspector">// Tool outputs (list_directory, read_file, generate_diagram) appear here.</pre>
+      </aside>
+    </div>
+
+    <script type="module">
+      import { LiveSession } from '/livebridge.js';
+
+      const el = (id) => document.getElementById(id);
+      const session = new LiveSession({ mode: 'audio' });
+
+      session.addEventListener('change', () => {
+        const active = session.isConnected && !session.isTerminating;
+        el('status').textContent = session.sessionModel
+          ? `${session.status} · ${session.mode} · ${session.sessionModel}`
+          : session.status;
+        el('start').disabled = session.isConnected || session.isTerminating;
+        el('mic').disabled = !active;
+        el('mic').textContent = session.isRecording ? 'Mute Mic' : 'Unmute Mic';
+        el('end').disabled = !active;
+        el('send').disabled = !active;
+
+        const pane = el('transcript');
+        pane.replaceChildren(
+          ...session.transcript.map((item) => {
+            const div = document.createElement('div');
+            div.className = `turn ${item.type}`;
+            div.textContent = item.text;
+            return div;
+          }),
+        );
+        pane.scrollTop = pane.scrollHeight;
+      });
+
+      el('start').onclick = async () => {
+        const preset = el('avatar-mode').value;
+        const isAvatar = Boolean(preset);
+        el('avatar').style.display = isAvatar ? 'block' : 'none';
+        const qs = preset ? `?avatar=${encodeURIComponent(preset)}` : '';
+
+        await session.connect({
+          mode: isAvatar ? 'avatar' : 'audio',
+          endpoint: `/ws${qs}`,
+          videoElement: isAvatar ? el('avatar') : null,
+          onToolCall: (msg) => {
+            const r = msg.result ?? {};
+            if (typeof r.image_base64 === 'string') {
+              el('diagram').src = r.image_base64;
+              el('diagram').style.display = 'block';
+            }
+            el('inspector').textContent =
+              typeof r.content === 'string'
+                ? r.content
+                : JSON.stringify(r, null, 2);
+          },
+        });
+      };
+
+      el('mic').onclick = () => session.toggleMic();
+      el('end').onclick = () => session.terminate();
+      el('prompt-form').onsubmit = (e) => {
+        e.preventDefault();
+        const input = el('prompt-input');
+        if (session.sendText(input.value)) input.value = '';
+      };
+    </script>
+  </body>
+</html>
