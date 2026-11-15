@@ -63,6 +63,7 @@ build: bundle
 	@for fe in $(EXAMPLES_FE); do (cd $$fe && npm run build) || exit 1; done
 
 lint: check-version check-bundle
+	@test -f dist/index.d.ts || npm run --silent build:esm
 	@unformatted="$$(gofmt -s -l $$(find . -name '*.go' -not -path '*/node_modules/*' -not -path './.dolt/*'))"; \
 		test -z "$$unformatted" || { echo "gofmt -s needed:"; echo "$$unformatted"; exit 1; }
 	@go vet . ./browser/...

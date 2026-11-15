@@ -49,8 +49,10 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
 
-      - name: Lint & Verify Lockstep Bundle
-        run: make lint
+      - name: Build TypeScript ESM & Verify Lockstep Bundle
+        run: |
+          make bundle
+          make lint
 
       - name: Run Hermetic Tests & Build All Examples
         run: |
