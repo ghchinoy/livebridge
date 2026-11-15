@@ -1030,4 +1030,6 @@ function j(e) {
 		return { result: e };
 	}
 }
-export { t as AVATAR_LANDSCAPE, e as AVATAR_PORTRAIT, o as CHIME_PRESETS, c as ChimeSynth, l as Fmp4Player, S as LiveSession, m as LiveSocketClient, y as PcmMic, b as PcmPlayer, d as TranscriptAssembler, x as VisionCapture, T as WebmcpCallEvent, w as WebmcpToolError, A as WebmcpToolHost, D as annotationsFor, O as asObject, p as base64ToArrayBuffer, E as canonicalJSON, v as computeInt16Rms, h as createPcmCaptureContext, f as describeCloseEvent, g as int16ArrayToLittleEndianBytes, C as nativeModelContext, s as normalizeChimePreset, u as parseToolCallItem, n as pickAvatarTarget, r as prepareAvatarImage, i as resizeAndCropImage, a as resizeToMaxDimension, _ as uint8ArrayToBase64 };
+// ts/index.ts
+var M = "0.1.0";
+export { t as AVATAR_LANDSCAPE, e as AVATAR_PORTRAIT, o as CHIME_PRESETS, c as ChimeSynth, l as Fmp4Player, S as LiveSession, m as LiveSocketClient, y as PcmMic, b as PcmPlayer, d as TranscriptAssembler, M as VERSION, x as VisionCapture, T as WebmcpCallEvent, w as WebmcpToolError, A as WebmcpToolHost, D as annotationsFor, O as asObject, p as base64ToArrayBuffer, E as canonicalJSON, v as computeInt16Rms, h as createPcmCaptureContext, f as describeCloseEvent, g as int16ArrayToLittleEndianBytes, C as nativeModelContext, s as normalizeChimePreset, u as parseToolCallItem, n as pickAvatarTarget, r as prepareAvatarImage, i as resizeAndCropImage, a as resizeToMaxDimension, _ as uint8ArrayToBase64 };

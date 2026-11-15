@@ -13,7 +13,7 @@ bd update <id> --claim
 bd close <id>
 ```
 
-> **Note:** Until a git remote is configured, this repository runs in local-only git mode (do not run `git push` or `bd sync` unless a remote is added).
+> **Git & Versioning:** `origin` points to `https://github.com/ghchinoy/livebridge.git`. Both `github.com/ghchinoy/livebridge` (`version.go`) and `@ghchinoy/livebridge` (`package.json`, `ts/index.ts`) share lockstep Semantic Versioning verified by `make check-version`.
 
 ## Architecture & Conventions
 

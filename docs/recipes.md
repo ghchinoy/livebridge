@@ -2,6 +2,13 @@
 
 Task-oriented recipes pairing **`github.com/ghchinoy/livebridge`** on the server with **`@ghchinoy/livebridge`** in the browser.
 
+> **Diátaxis navigation**
+>
+> - **Tutorial (First 60 Seconds):** [Quickstart](../README.md#quickstart)
+> - **Explanation & Decision Guide:** [Developer Guide](developers-guide.md)
+> - **How-To Guides (Copy-Paste Patterns):** *You are here*
+> - **Reference (Framing & Close Codes):** [Wire Protocol & API Reference](wire-protocol.md)
+
 ---
 
 ## 1. Fixed-Persona Voice Server + Embedded Browser Bundle (Zero Node)

@@ -3,6 +3,26 @@
   "version": "0.1.0",
   "description": "Zero-dependency browser & Lit client kit for real-time Gemini Live voice, talking video avatars, 1 FPS vision, WebMCP page tools, and proactive alerts — paired with the Go livebridge switchboard.",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ghchinoy/livebridge.git"
+  },
+  "homepage": "https://github.com/ghchinoy/livebridge#readme",
+  "bugs": {
+    "url": "https://github.com/ghchinoy/livebridge/issues"
+  },
+  "keywords": [
+    "gemini",
+    "gemini-live",
+    "vertex-ai",
+    "avatar",
+    "web-audio",
+    "mse",
+    "fmp4",
+    "webmcp",
+    "websocket",
+    "lit"
+  ],
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -27,6 +47,7 @@
     "!ts/**/*.test.ts",
     "!ts/__tests__",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "workspaces": [

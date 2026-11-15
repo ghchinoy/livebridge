@@ -241,6 +241,7 @@ npm publish --access public
 
 ## Documentation
 
+- **[Developer Guide (Architecture & Implementor Walkthrough)](docs/developers-guide.md)** — Decision matrix (`NewFixedHandler` vs `NewDynamicHandler`, `livebridge/browser` vs `@ghchinoy/livebridge` vs `/lit`), step-by-step build walkthrough, the 7 under-the-hood invariants, hermetic testing without quota, and Cloud Run deployment settings.
 - **[Recipes & How-To Guide](docs/recipes.md)** — Voice, Talking Avatars, Server Tools, WebMCP Visual Snapshots, Proactive `AlertBus`, and Lit 3 `ReactiveController`s.
 - **[Wire Protocol & API Reference](docs/wire-protocol.md)** — JSON control frames, binary PCM / fMP4 framing, and RFC 6455 close codes.
 

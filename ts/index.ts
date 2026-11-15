@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Lockstep semantic version shared with Go livebridge.Version.
+export const VERSION = '0.1.0';
+
 export * from './avatar-image.js';
 export * from './chime-synth.js';
 export * from './fmp4-player.js';

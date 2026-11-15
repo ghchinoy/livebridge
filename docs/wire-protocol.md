@@ -2,6 +2,13 @@
 
 Specification for the WebSocket wire protocol shared between **`github.com/ghchinoy/livebridge`** and **`@ghchinoy/livebridge`**.
 
+> **Diátaxis navigation**
+>
+> - **Tutorial (First 60 Seconds):** [Quickstart](../README.md#quickstart)
+> - **Explanation & Decision Guide:** [Developer Guide](developers-guide.md)
+> - **How-To Guides (Copy-Paste Patterns):** [Recipes](recipes.md)
+> - **Reference (Framing & Close Codes):** *You are here*
+
 ---
 
 ## 1. Transport & Security Envelope

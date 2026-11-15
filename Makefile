@@ -15,7 +15,7 @@
 # livebridge: Paired Go (github.com/ghchinoy/livebridge) & TypeScript
 # (@ghchinoy/livebridge) libraries + standalone examples for Gemini Live.
 
-.PHONY: help build bundle check-bundle lint license license-check \
+.PHONY: help build bundle check-bundle check-version lint license license-check \
 	test test-go test-ts test-examples test-live
 
 EXAMPLES_GO := examples/01-minimal-voice examples/02-avatar-desk \
@@ -33,6 +33,7 @@ help:
 	@echo "Build & Bundle:"
 	@echo "  make bundle        - Compile TS ESM (dist/) + embedded browser bundle (browser/dist/)"
 	@echo "  make check-bundle  - Verify browser/dist/livebridge.esm.js is fresh & framework-free"
+	@echo "  make check-version - Verify version.go, ts/index.ts, and package.json match"
 	@echo "  make build         - Build root libraries and all 4 standalone examples"
 	@echo ""
 	@echo "Quality Gates:"
@@ -53,12 +54,15 @@ check-bundle:
 		test "$$before" = "$$after" || { echo "browser/dist/livebridge.esm.js was stale; re-built"; exit 1; }
 	@go test ./browser/...
 
+check-version:
+	@node -e 'const fs=require("node:fs"); const pkg=JSON.parse(fs.readFileSync("package.json","utf8")).version; const go=(fs.readFileSync("version.go","utf8").match(/Version\s*=\s*"([^"]+)"/)||[])[1]; const ts=(fs.readFileSync("ts/index.ts","utf8").match(/VERSION\s*=\s*\x27([^\x27]+)\x27/)||[])[1]; if(!pkg||pkg!==go||pkg!==ts){console.error("Version mismatch:",{pkg,go,ts});process.exit(1);} console.log("Lockstep version verified:",pkg);'
+
 build: bundle
 	@go build . ./browser/...
 	@for d in $(EXAMPLES_GO); do (cd $$d && go build -o /dev/null .) || exit 1; done
 	@for fe in $(EXAMPLES_FE); do (cd $$fe && npm run build) || exit 1; done
 
-lint: check-bundle
+lint: check-version check-bundle
 	@unformatted="$$(gofmt -s -l $$(find . -name '*.go' -not -path '*/node_modules/*' -not -path './.dolt/*'))"; \
 		test -z "$$unformatted" || { echo "gofmt -s needed:"; echo "$$unformatted"; exit 1; }
 	@go vet . ./browser/...
