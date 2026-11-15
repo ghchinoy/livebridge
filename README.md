@@ -1,39 +1,52 @@
 # livebridge
 
-Paired **Go (`github.com/ghchinoy/livebridge`)** and **TypeScript (`@ghchinoy/livebridge`)** libraries for building real-time **Gemini Live** 24 kHz voice and talking-avatar (`fMP4` H.264 + AAC) applications without copying switchboard, Web Audio, or MSE boilerplate across projects.
+[![Go 1.26+](https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go&logoColor=white)](go.mod)
+[![TypeScript](https://img.shields.io/badge/TypeScript-ESM%20%7C%200%20Deps-3178C6?logo=typescript&logoColor=white)](package.json)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
+Paired Go (`github.com/ghchinoy/livebridge`) and TypeScript (`@ghchinoy/livebridge`) libraries that bridge browser Web Audio, MSE avatar video, 1 FPS vision, and WebMCP page tools to the Gemini Live Bidi API through a credential-isolated WebSocket switchboard.
+
+## Contents
+
+- [Installation](#installation)
+- [Quickstart](#quickstart)
+- [Architecture](#architecture)
+- [Why `livebridge`?](#why-livebridge)
+- [Stand-Alone Examples](#stand-alone-examples)
+- [Local Development Setup](#local-development-setup)
+- [Releasing & Publishing](#releasing--publishing)
+- [Troubleshooting](#troubleshooting)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
-## Why `livebridge`?
+## Installation
 
-Connecting a browser directly to the Gemini Live Bidi API exposes cloud credentials and hits subtle operational pitfalls across audio, avatar video, and tool calling. `livebridge` packages the battle-tested server switchboard and headless browser media runtime behind clean, composable APIs:
+### Go Backend (`go.mod`)
 
-| Problem in Raw Gemini Live Apps | How `livebridge` Solves It |
-| :--- | :--- |
-| **`genai.Live.Connect` ignores `ctx` after dial** | `Bridge.Shutdown` (`sync.Once`) explicitly closes both the upstream session and the mutex-serialized `SafeConn` on every exit path (`session_limit_reached`, farewell `TurnComplete`, backstop, error, disconnect). |
-| **`1007` setup landmines** (`[AUDIO, VIDEO]`, square `1024x1024` avatars, `ProactiveAudio` on 3.5 Flash, empty VAD) | `SessionSpec` + `BuildConnectConfig` requests `[VIDEO]` alone for avatars, validates PNG/JPEG dimensions (`>=704x1280` or `>=1280x704`, non-square) pre-dial, gates `ProactiveAudio` by model, and omits unset VAD structs. |
-| **Farewell speech cut off on barge-in** | `TerminateGate` skips an interrupted turn's `TurnComplete` and closes only on the farewell turn's own `TurnComplete` (backed by a `12s` timer). |
-| **Avatar video freezes between speech turns** | `SniffMP4` extracts `avcC` codecs on the first fragment; `Fmp4Player` jumps `video.currentTime` across inter-turn PTS gaps, trims future media on barge-in, and evicts old ranges on `QuotaExceededError`. |
-| **Single-binary Go apps forced to inline 450+ lines of Web Audio JS** | `github.com/ghchinoy/livebridge/browser` embeds the compiled **11.9 kB gzipped** zero-dependency `@ghchinoy/livebridge` ES module via `//go:embed` (`browser.Handler()`). |
-| **Browser/WebMCP tools need visual feedback** | `WebmcpToolHost` + `ToolRunner` (`AllowPageRelay`, `SeeVisualResults`) inject `<canvas>` JPEG snapshots via `SendRealtimeInput({Video})` strictly *before* `SendToolResponse` so the model sees UI updates before speaking. |
+```bash
+go get github.com/ghchinoy/livebridge@latest
+```
 
----
+### Browser Client (choose one)
 
-## Package Entry Points
+- **Vite / Bundler TypeScript (0 runtime dependencies):**
 
-### Go (`github.com/ghchinoy/livebridge`)
+  ```bash
+  npm install @ghchinoy/livebridge
+  # Optional: install lit ^3.0.0 if using @ghchinoy/livebridge/lit ReactiveControllers
+  npm install lit
+  ```
 
-- **`github.com/ghchinoy/livebridge`** — `NewFixedHandler`, `NewDynamicHandler`, `SessionSpec`, `BuildConnectConfig`, `Bridge`, `ClientPool` (Vertex AI regional/global + Gemini API key), `FuncRegistry`, `ToolRunner`, `DeclarationsFromPageTools`, `AlertBusOf[T]` / `AlertBus`, `FormatUntrustedAlert`, `OriginPolicy`, `NewHTTPServer`, `SniffMP4`, `ParseImageDimensions`.
-- **`github.com/ghchinoy/livebridge/browser`** — `browser.Handler()` and `browser.JS()` serving the embedded `@ghchinoy/livebridge` ES module with SHA-256 `ETag` support.
-
-### TypeScript (`@ghchinoy/livebridge`)
-
-- **`@ghchinoy/livebridge`** *(0 runtime dependencies)* — `LiveSession`, `LiveSocketClient`, `PcmMic`, `PcmPlayer`, `Fmp4Player`, `VisionCapture` (1 FPS camera & screen share), `prepareAvatarImage` (`704x1280` / `1280x704` auto-cropper), `WebmcpToolHost`, `TranscriptAssembler`, `ChimeSynth`.
-- **`@ghchinoy/livebridge/lit`** *(optional `lit ^3.0.0` peer dependency)* — `LiveSessionController`, `LiveSocketController`, `PcmMicController`, `PcmPlayerController`, `Fmp4PlayerController`, `VisionCaptureController`.
+- **Zero-Node Single-Binary Go (`//go:embed`):** Import `github.com/ghchinoy/livebridge/browser` and mount `browser.Handler()`—no `package.json`, `node_modules`, or bundler required.
 
 ---
 
-## 60-Second Quickstart (Zero-Node Go Binary)
+## Quickstart
+
+Spin up a complete 24 kHz Gemini Live voice server with barge-in, streaming transcripts, and graceful farewells in a single Go file:
 
 ```go
 package main
@@ -69,49 +82,178 @@ func main() {
 }
 ```
 
-```html
-<script type="module">
-  import { LiveSession } from '/livebridge.js';
+Connect from plain HTML (via `/livebridge.js`) or TypeScript (`import { LiveSession } from '@ghchinoy/livebridge'`):
 
-  const session = new LiveSession({ mode: 'audio' });
-  session.addEventListener('change', () => console.log(session.status, session.transcript));
-  document.getElementById('start').onclick = () => session.connect({ endpoint: '/ws/live' });
-  document.getElementById('stop').onclick = () => session.terminate();
-</script>
+```ts
+import { LiveSession } from '@ghchinoy/livebridge'; // or '/livebridge.js'
+
+const session = new LiveSession({ mode: 'audio' });
+session.addEventListener('change', () => {
+  console.log(session.status, session.transcript);
+});
+
+await session.connect({ endpoint: '/ws/live' });
+// Later, trigger a spoken farewell via TerminateGate before closing with 1000:
+// session.terminate();
+```
+
+Run it locally:
+
+```bash
+export GOOGLE_CLOUD_PROJECT="your-gcp-project"   # or export GEMINI_API_KEY="..."
+go run .
 ```
 
 ---
 
-## Stand-Alone Validation Examples (`examples/*`)
+## Architecture
 
-Every example under [`examples/`](examples/) is an independent Go module (and optional Vite frontend) linked via root `go.work` with **zero copied library files**:
+```text
+┌──────────────────────────────────────────┐          ┌──────────────────────────────────────────┐
+│ Browser (@ghchinoy/livebridge · 11.9 kB) │          │ Go Server (github.com/ghchinoy/livebridge│
+│                                          │  WS JSON │                                          │
+│  LiveSession / LiveSessionController     │◄────────►│  OriginPolicy + SafeConn (16M -> 8M cap) │
+│   ├─ PcmMic (16 kHz AudioWorklet + RMS)  │  + Raw   │  NewFixedHandler / NewDynamicHandler     │
+│   ├─ PcmPlayer (24 kHz + AnalyserNode)   │  Binary  │  SessionSpec -> BuildConnectConfig       │
+│   ├─ Fmp4Player (MSE PTS jump + trim)    │ PCM/fMP4 │  Bridge (TerminateGate + 9m55s cap)      │
+│   ├─ VisionCapture (1 FPS cam / screen)  │          │   ├─ ToolRunner (Go + WebMCP visual)     │
+│   └─ WebmcpToolHost + ChimeSynth         │          │   └─ AlertBus + FormatUntrustedAlert     │
+└──────────────────────────────────────────┘          └────────────────────┬─────────────────────┘
+                                                                           │ Bidi gRPC / WS
+                                                                           ▼ (ADC or API Key)
+                                                              ┌─────────────────────────┐
+                                                              │   Gemini Live Bidi API  │
+                                                              │ (Audio & Avatar Video)  │
+                                                              └─────────────────────────┘
+```
 
-| Example | Stack | What It Proves |
+### Package Entry Points
+
+- **`github.com/ghchinoy/livebridge`** — `NewFixedHandler`, `NewDynamicHandler`, `SessionSpec`, `BuildConnectConfig`, `Bridge`, `ClientPool`, `FuncRegistry`, `ToolRunner`, `DeclarationsFromPageTools`, `AlertBusOf[T]` / `AlertBus`, `FormatUntrustedAlert`, `OriginPolicy`, `NewHTTPServer`, `SniffMP4`, `ParseImageDimensions`.
+- **`github.com/ghchinoy/livebridge/browser`** — `browser.Handler()` and `browser.JS()` serving the embedded `@ghchinoy/livebridge` ES module with SHA-256 `ETag` (`304 Not Modified`) caching.
+- **`@ghchinoy/livebridge`** *(0 runtime dependencies)* — `LiveSession`, `LiveSocketClient`, `PcmMic`, `PcmPlayer`, `Fmp4Player`, `VisionCapture`, `prepareAvatarImage`, `WebmcpToolHost`, `TranscriptAssembler`, `ChimeSynth`.
+- **`@ghchinoy/livebridge/lit`** *(optional `lit ^3.0.0` peer dependency)* — `LiveSessionController`, `LiveSocketController`, `PcmMicController`, `PcmPlayerController`, `Fmp4PlayerController`, `VisionCaptureController`.
+
+---
+
+## Why `livebridge`?
+
+| Raw Gemini Live Failure Mode | How `livebridge` Solves It |
+| :--- | :--- |
+| **`genai.Live.Connect` ignores `ctx` after dial** | `Bridge.Shutdown` (`sync.Once`) explicitly closes both the upstream session and `SafeConn` on every exit path (`session_limit_reached`, farewell `TurnComplete`, backstop, error, client disconnect). |
+| **`1007` setup errors** (`[AUDIO, VIDEO]`, square `1024x1024` avatars, `ProactiveAudio` on 3.5 Flash, zeroed VAD) | `BuildConnectConfig` requests `[VIDEO]` alone for avatars, checks PNG/JPEG dimensions (`>=704x1280` or `>=1280x704`, non-square) pre-dial, gates `ProactiveAudio` to `3.8`/`lite`, and omits empty VAD structs. |
+| **Farewell speech cut off on barge-in** | `TerminateGate` skips an interrupted turn's `TurnComplete` and closes only on the farewell turn's own `TurnComplete` (backed by a `12s` timer). |
+| **Avatar video freezes between speech turns** | `SniffMP4` extracts `avcC` codecs on the first fragment; `Fmp4Player` jumps `video.currentTime` across inter-turn PTS gaps, trims buffered future media on barge-in, and evicts old ranges on `QuotaExceededError`. |
+| **Browser tools lack visual grounding** | `WebmcpToolHost` + `ToolRunner` (`SeeVisualResults: true`) inject `<canvas>` JPEG snapshots via `SendRealtimeInput({Video})` strictly *before* `SendToolResponse`. |
+
+In [`examples/03-code-assistant`](examples/03-code-assistant/), replacing copy-pasted switchboard files and inline Web Audio/MSE scripts with `livebridge` + `livebridge/browser` reduced total application code from **~3,100+ lines (18 files) to ~360 lines (3 files)**.
+
+---
+
+## Stand-Alone Examples
+
+Every app under [`examples/`](examples/) is an independent Go module with **zero copied library files** (wired locally via [`go.work`](go.work)):
+
+| Example | Ports | Stack & Capabilities Proven |
 | :--- | :--- | :--- |
-| **[`01-minimal-voice`](examples/01-minimal-voice/)** | Go + `livebridge/browser` (Zero Node) | Full 24 kHz voice assistant, `AudioWorklet` RMS meter, barge-in, streaming transcripts, and graceful farewell in ~75 LOC Go. |
-| **[`02-avatar-desk`](examples/02-avatar-desk/)** | Go (`NewDynamicHandler`) + Vite TS (`@ghchinoy/livebridge`) | Talking `fMP4` preset & custom `704x1280` / `1280x704` uploaded avatars (`prepareAvatarImage`), `Fmp4Player`, and 1 FPS camera/screen `VisionCapture`. |
-| **[`03-code-assistant`](examples/03-code-assistant/)** | Go (`FuncRegistry` + `GoogleSearch`) + `livebridge/browser` | Direct port of `local-code-assistant` (`list_directory`, `read_file`, `generate_diagram`, voice/avatar toggle) shrinking **~3,100+ LOC (18 files) -> ~360 LOC (3 files)**. |
-| **[`04-ops-watchtower`](examples/04-ops-watchtower/)** | Go + Vite Lit 3 (`@ghchinoy/livebridge/lit`) | `LiveSessionController`, `WebmcpToolHost` canvas tools with `SeeVisualResults` JPEG snapshots, and multi-tab `AlertBus` + `FormatUntrustedAlert` + `ChimeSynth`. |
+| **[`01-minimal-voice`](examples/01-minimal-voice/)** | `:8081` | Zero-Node Go binary (`NewFixedHandler` + `livebridge/browser` + `LiveSession`); 24 kHz PCM, `AudioWorklet` RMS meter, barge-in, farewells. |
+| **[`02-avatar-desk`](examples/02-avatar-desk/)** | `:8082` / Vite `:5174` | `NewDynamicHandler` + Vite TS (`@ghchinoy/livebridge`); preset & custom `704x1280` / `1280x704` avatars (`prepareAvatarImage`), `Fmp4Player`, 1 FPS camera & screen `VisionCapture`. |
+| **[`03-code-assistant`](examples/03-code-assistant/)** | `:8083` | `FuncRegistry` (`list_directory`, `read_file`, `generate_diagram`) + `GoogleSearch` + `livebridge/browser`; voice or `?avatar=Kira` video mode. |
+| **[`04-ops-watchtower`](examples/04-ops-watchtower/)** | `:8084` / Vite `:5175` | Lit 3 (`@ghchinoy/livebridge/lit` `LiveSessionController`), `WebmcpToolHost` `<canvas>` tools (`SeeVisualResults`), `AlertBus` + `FormatUntrustedAlert` + `ChimeSynth`. |
+
+---
+
+## Local Development Setup
+
+### Prerequisites
+
+- **Go** `1.26` or newer (`go version`)
+- **Node.js** `22.23.4` or newer and **npm** `10+` (`node -v`)
+- **Authentication** (to run examples or `make test-live`):
+  - **Google Cloud (recommended; required for video avatars):** `gcloud auth application-default login` and `export GOOGLE_CLOUD_PROJECT="your-project-id"`
+  - **Gemini Developer API (audio & tool sessions):** `export GEMINI_API_KEY="your-api-key"`
+
+### Clone, Install, Test & Run
+
+```bash
+git clone https://github.com/ghchinoy/livebridge.git
+cd livebridge
+
+# Install TypeScript dependencies and workspace links
+npm install
+
+# Build dist/ + embedded browser/dist/livebridge.esm.js
+make bundle
+
+# Run Go race tests, Vitest headless Chromium tests, and all 4 example builds
+make lint
+make test
+
+# Run an example locally (e.g. Zero-Node Minimal Voice on http://localhost:8081)
+cd examples/01-minimal-voice
+GOOGLE_CLOUD_PROJECT="your-project-id" go run .
+```
+
+### Environment Variables
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `GOOGLE_CLOUD_PROJECT` | — | GCP project ID for Vertex AI Live Bidi sessions (`us-central1`). |
+| `GEMINI_API_KEY` | — | Gemini Developer API key (used when `GOOGLE_CLOUD_PROJECT` is unset or `GOOGLE_GENAI_USE_VERTEXAI=false`). |
+| `GEMINI_LIVE_MODEL` | `gemini-3.8-live` | Default Live model (`gemini-3.8-live`, `gemini-3.5-flash-lite-live-preview`). |
+| `ALLOWED_ORIGINS` | *(same-origin + loopback)* | Comma-separated `scheme://host[:port]` origins allowed by `OriginPolicy`. |
+| `CHROMIUM_PATH` | *(Playwright cache)* | Optional path to a local Chrome/Chromium binary for `make test-ts`. |
+
+---
+
+## Releasing & Publishing
+
+Maintainers release synchronized Go module tags and `@ghchinoy/livebridge` npm versions from a clean `main` branch:
+
+```bash
+# 1. Rebuild ESM + embedded browser bundle and run all quality gates
+make bundle
+make lint
+make test
+
+# 2. Tag and push the Go module release (browser/dist/livebridge.esm.js is committed)
+git tag v0.1.0
+git push origin main --tags
+
+# 3. Publish @ghchinoy/livebridge to npm (prepublishOnly runs npm run build)
+npm publish --access public
+```
+
+---
+
+## Troubleshooting
+
+- **WebSocket closes immediately with `1007 Invalid session config` on custom avatars:**
+  Custom avatar images must be PNG or JPEG in portrait (`>=704x1280`) or landscape (`>=1280x704`) aspect ratio—square (`1024x1024`) images are rejected. Use `prepareAvatarImage(dataUrl)` in `@ghchinoy/livebridge` to auto-crop uploads on the client. Note that `CustomizedAvatar` also requires an allowlisted GCP project.
+- **HTTP `403 Origin not allowed` when upgrading `/ws`:**
+  `OriginPolicy` allows same-origin requests and loopback dev servers (`localhost:5173 -> localhost:8080`). When hosting the frontend on a separate non-loopback domain, set `ALLOWED_ORIGINS="https://app.example.com"`.
+- **`make test-ts` cannot find a browser binary:**
+  Run `npx playwright install chromium` once, or point `CHROMIUM_PATH` at an installed browser (for example, `CHROMIUM_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" make test-ts`).
+- **Real API smoke verification:**
+  Run `GOOGLE_CLOUD_PROJECT="your-project-id" make test-live` to test both `ModeAudio` and `ModeAvatar` (`Kira`) end-to-end against `gemini-3.8-live`.
 
 ---
 
 ## Documentation
 
-- **[Recipes & How-To Guide](docs/recipes.md)** — Voice, Talking Avatars, Server Tools, WebMCP Visual Snapshots, Proactive `AlertBus`, and Lit Controllers.
-- **[Wire Protocol & API Reference](docs/wire-protocol.md)** — JSON control frames, binary PCM / fMP4 framing, RFC 6455 close codes, and Go/TS symbol tables.
+- **[Recipes & How-To Guide](docs/recipes.md)** — Voice, Talking Avatars, Server Tools, WebMCP Visual Snapshots, Proactive `AlertBus`, and Lit 3 `ReactiveController`s.
+- **[Wire Protocol & API Reference](docs/wire-protocol.md)** — JSON control frames, binary PCM / fMP4 framing, and RFC 6455 close codes.
 
 ---
 
-## Development & Quality Gates
+## Contributing
 
-```bash
-make bundle        # Build dist/ (ESM + .d.ts) and browser/dist/livebridge.esm.js
-make check-bundle  # Verify embedded browser bundle is fresh and framework-free
-make lint          # gofmt -s, go vet, golangci-lint, tsc --noEmit, prettier, license-check
-make test          # Go race tests + Vitest headless Chromium + all 4 standalone examples
-make test-live     # Optional real Gemini Live API smoke test (uses quota)
-```
+Pull requests are welcome! For breaking changes to the WebSocket wire protocol or exported Go/TypeScript signatures, please open an issue first to discuss the design.
+
+Before submitting a PR, ensure `make lint` and `make test` pass cleanly (including `make check-bundle` whenever files under `ts/` change).
+
+---
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE).
+Apache License 2.0 — see [LICENSE](LICENSE).

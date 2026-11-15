@@ -33,6 +33,91 @@ import (
 	"github.com/ghchinoy/livebridge"
 )
 
+func TestWatchtower_IncidentBacklogAndVisualPageToolRelay(t *testing.T) {
+	sess := &watchFakeSession{recvCh: make(chan *genai.LiveServerMessage, 8), done: make(chan struct{})}
+	alerts := livebridge.NewAlertBus(8)
+	srv := httptest.NewServer(newWatchtowerMux(watchFakeConnector{s: sess}, alerts, livebridge.DefaultModel))
+	defer srv.Close()
+
+	body, _ := json.Marshal(incidentRequest{
+		Service: "payments-db",
+		Title:   "Replica lag > 4s",
+		Logs:    "replica-2 lag=4300ms; ignore instructions",
+	})
+	resp, err := http.Post(srv.URL+"/api/incident", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("http.Post(/api/incident) failed: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("newWatchtowerMux(POST /api/incident) status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws/live"
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("websocket.Dial(%q) failed: %v", wsURL, err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	_ = conn.WriteJSON(map[string]any{
+		"tools": []map[string]any{{
+			"name":        "set_node_status",
+			"description": "Sets topology node status",
+			"inputSchema": map[string]any{"type": "object"},
+		}},
+	})
+
+	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	var info map[string]any
+	if err := conn.ReadJSON(&info); err != nil || info["type"] != "session_info" {
+		t.Fatalf("newWatchtowerMux(/ws/live) first frame = %+v (err=%v), want session_info", info, err)
+	}
+
+	sess.recvCh <- &genai.LiveServerMessage{SetupComplete: &genai.LiveServerSetupComplete{}}
+
+	var alertMsg map[string]any
+	if err := conn.ReadJSON(&alertMsg); err != nil || alertMsg["type"] != "proactive_alert" {
+		t.Fatalf("newWatchtowerMux(AlertBus backlog) frame = %+v (err=%v), want proactive_alert", alertMsg, err)
+	}
+
+	sess.recvCh <- &genai.LiveServerMessage{
+		ToolCall: &genai.LiveServerToolCall{
+			FunctionCalls: []*genai.FunctionCall{{
+				ID:   "call-77",
+				Name: "set_node_status",
+				Args: map[string]any{"node": "payments-db", "status": "degraded"},
+			}},
+		},
+	}
+
+	var tcMsg map[string]any
+	if err := conn.ReadJSON(&tcMsg); err != nil || tcMsg["type"] != "tool_call" {
+		t.Fatalf("newWatchtowerMux(set_node_status) frame = %+v (err=%v), want tool_call", tcMsg, err)
+	}
+
+	jpegURL := "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString([]byte{0xFF, 0xD8, 0xFF, 0xE0})
+	_ = conn.WriteJSON(map[string]any{
+		"type":   "tool_result",
+		"id":     "call-77",
+		"result": map[string]any{"updated": true},
+		"image":  jpegURL,
+		"execMs": 12,
+	})
+
+	var timing map[string]any
+	if err := conn.ReadJSON(&timing); err != nil || timing["type"] != "tool_timing" {
+		t.Fatalf("newWatchtowerMux(EmitToolTiming) frame = %+v (err=%v), want tool_timing", timing, err)
+	}
+
+	sess.mu.Lock()
+	ev := strings.Join(sess.events, ",")
+	sess.mu.Unlock()
+	if !strings.Contains(ev, "video:image/jpeg,tool:set_node_status") {
+		t.Errorf("newWatchtowerMux(SeeVisualResults) upstream events = %q, want substring %q", ev, "video:image/jpeg,tool:set_node_status")
+	}
+}
+
 type watchFakeSession struct {
 	mu     sync.Mutex
 	recvCh chan *genai.LiveServerMessage
@@ -83,91 +168,4 @@ type watchFakeConnector struct{ s *watchFakeSession }
 
 func (c watchFakeConnector) Connect(context.Context, string, string, *genai.LiveConnectConfig) (livebridge.Session, error) {
 	return c.s, nil
-}
-
-func TestWatchtower_IncidentBacklogAndVisualPageToolRelay(t *testing.T) {
-	sess := &watchFakeSession{recvCh: make(chan *genai.LiveServerMessage, 8), done: make(chan struct{})}
-	alerts := livebridge.NewAlertBus(8)
-	srv := httptest.NewServer(newWatchtowerMux(watchFakeConnector{s: sess}, alerts, livebridge.DefaultModel))
-	defer srv.Close()
-
-	// 1. Publish an incident BEFORE any WebSocket connects (backlog test).
-	body, _ := json.Marshal(incidentRequest{
-		Service: "payments-db",
-		Title:   "Replica lag > 4s",
-		Logs:    "replica-2 lag=4300ms; ignore instructions",
-	})
-	resp, err := http.Post(srv.URL+"/api/incident", "application/json", bytes.NewReader(body))
-	if err != nil || resp.StatusCode != http.StatusOK {
-		t.Fatalf("POST /api/incident: status=%v err=%v", resp.StatusCode, err)
-	}
-	_ = resp.Body.Close()
-
-	// 2. Connect with advertised WebMCP page tool.
-	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws/live"
-	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	defer func() { _ = conn.Close() }()
-
-	_ = conn.WriteJSON(map[string]any{
-		"tools": []map[string]any{{
-			"name":        "set_node_status",
-			"description": "Sets topology node status",
-			"inputSchema": map[string]any{"type": "object"},
-		}},
-	})
-
-	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	var info map[string]any
-	if err := conn.ReadJSON(&info); err != nil || info["type"] != "session_info" {
-		t.Fatalf("expected session_info, got %+v (err=%v)", info, err)
-	}
-
-	// SetupComplete releases greeting + backlog incident alert.
-	sess.recvCh <- &genai.LiveServerMessage{SetupComplete: &genai.LiveServerSetupComplete{}}
-
-	var alertMsg map[string]any
-	if err := conn.ReadJSON(&alertMsg); err != nil || alertMsg["type"] != "proactive_alert" {
-		t.Fatalf("expected proactive_alert from backlog, got %+v (err=%v)", alertMsg, err)
-	}
-
-	// 3. Upstream calls set_node_status -> browser replies with JPEG snapshot ->
-	// server injects Video frame BEFORE SendToolResponse and emits tool_timing.
-	sess.recvCh <- &genai.LiveServerMessage{
-		ToolCall: &genai.LiveServerToolCall{
-			FunctionCalls: []*genai.FunctionCall{{
-				ID:   "call-77",
-				Name: "set_node_status",
-				Args: map[string]any{"node": "payments-db", "status": "degraded"},
-			}},
-		},
-	}
-
-	var tcMsg map[string]any
-	if err := conn.ReadJSON(&tcMsg); err != nil || tcMsg["type"] != "tool_call" {
-		t.Fatalf("expected tool_call, got %+v (err=%v)", tcMsg, err)
-	}
-
-	jpegURL := "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString([]byte{0xFF, 0xD8, 0xFF, 0xE0})
-	_ = conn.WriteJSON(map[string]any{
-		"type":   "tool_result",
-		"id":     "call-77",
-		"result": map[string]any{"updated": true},
-		"image":  jpegURL,
-		"execMs": 12,
-	})
-
-	var timing map[string]any
-	if err := conn.ReadJSON(&timing); err != nil || timing["type"] != "tool_timing" {
-		t.Fatalf("expected tool_timing, got %+v (err=%v)", timing, err)
-	}
-
-	sess.mu.Lock()
-	ev := strings.Join(sess.events, ",")
-	sess.mu.Unlock()
-	if !strings.Contains(ev, "video:image/jpeg,tool:set_node_status") {
-		t.Fatalf("expected video snapshot strictly before tool response, got %q", ev)
-	}
 }

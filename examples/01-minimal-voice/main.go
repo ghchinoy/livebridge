@@ -31,6 +31,21 @@ import (
 //go:embed index.html
 var indexHTML []byte
 
+func main() {
+	clients, err := livebridge.NewClientPoolFromEnv()
+	if err != nil {
+		log.Fatal(err)
+	}
+	port := envOr("PORT", "8081")
+	model := envOr("GEMINI_LIVE_MODEL", livebridge.DefaultModel)
+	voice := envOr("GEMINI_VOICE", "Puck")
+
+	addr := ":" + port
+	slog.Info("Minimal Voice listening", "url", "http://localhost"+addr, "model", model, "voice", voice)
+	srv := livebridge.NewHTTPServer(addr, newMux(clients, model, voice))
+	log.Fatal(srv.ListenAndServe())
+}
+
 func newMux(connector livebridge.Connector, model, voice string) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, _ *http.Request) {
@@ -51,21 +66,6 @@ func newMux(connector livebridge.Connector, model, voice string) *http.ServeMux 
 		},
 	}))
 	return mux
-}
-
-func main() {
-	clients, err := livebridge.NewClientPoolFromEnv()
-	if err != nil {
-		log.Fatal(err)
-	}
-	port := envOr("PORT", "8081")
-	model := envOr("GEMINI_LIVE_MODEL", livebridge.DefaultModel)
-	voice := envOr("GEMINI_VOICE", "Puck")
-
-	addr := ":" + port
-	slog.Info("Minimal Voice listening", "url", "http://localhost"+addr, "model", model, "voice", voice)
-	srv := livebridge.NewHTTPServer(addr, newMux(clients, model, voice))
-	log.Fatal(srv.ListenAndServe())
 }
 
 func envOr(key, fallback string) string {

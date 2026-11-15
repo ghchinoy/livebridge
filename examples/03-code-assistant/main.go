@@ -38,6 +38,25 @@ var allowedModels = []string{
 	"gemini-3.5-flash-lite-live-preview",
 }
 
+func main() {
+	clients, err := livebridge.NewClientPoolFromEnv()
+	if err != nil {
+		log.Fatal(err)
+	}
+	rootDir := envOr("WORKSPACE_ROOT", ".")
+	diagramsDir := filepath.Join(os.TempDir(), "livebridge-code-assistant-diagrams")
+	port := envOr("PORT", "8083")
+	model := envOr("GEMINI_LIVE_MODEL", livebridge.DefaultModel)
+
+	mux, err := newAppMux(clients, rootDir, diagramsDir, model)
+	if err != nil {
+		log.Fatal(err)
+	}
+	addr := ":" + port
+	slog.Info("Code Assistant listening", "url", "http://localhost"+addr, "root", rootDir)
+	log.Fatal(livebridge.NewHTTPServer(addr, mux).ListenAndServe())
+}
+
 func newAppMux(connector livebridge.Connector, rootDir, diagramsDir, defaultModel string) (*http.ServeMux, error) {
 	reg, err := buildCodebaseRegistry(rootDir, diagramsDir)
 	if err != nil {
@@ -75,25 +94,6 @@ func newAppMux(connector livebridge.Connector, rootDir, diagramsDir, defaultMode
 		},
 	}))
 	return mux, nil
-}
-
-func main() {
-	clients, err := livebridge.NewClientPoolFromEnv()
-	if err != nil {
-		log.Fatal(err)
-	}
-	rootDir := envOr("WORKSPACE_ROOT", ".")
-	diagramsDir := filepath.Join(os.TempDir(), "livebridge-code-assistant-diagrams")
-	port := envOr("PORT", "8083")
-	model := envOr("GEMINI_LIVE_MODEL", livebridge.DefaultModel)
-
-	mux, err := newAppMux(clients, rootDir, diagramsDir, model)
-	if err != nil {
-		log.Fatal(err)
-	}
-	addr := ":" + port
-	slog.Info("Code Assistant listening", "url", "http://localhost"+addr, "root", rootDir)
-	log.Fatal(livebridge.NewHTTPServer(addr, mux).ListenAndServe())
 }
 
 func envOr(key, fallback string) string {

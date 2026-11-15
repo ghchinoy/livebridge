@@ -118,10 +118,9 @@ func NewClientPoolFromEnv() (*ClientPool, error) {
 func NewClientPoolWithOptions(opts ClientPoolOptions) *ClientPool {
 	backend := opts.Backend
 	if backend == genai.BackendUnspecified {
+		backend = genai.BackendVertexAI
 		if opts.ProjectID == "" && opts.APIKey != "" {
 			backend = genai.BackendGeminiAPI
-		} else {
-			backend = genai.BackendVertexAI
 		}
 	}
 	known := opts.KnownLocations
@@ -143,16 +142,12 @@ func (p *ClientPool) Backend() genai.Backend {
 	return p.backend
 }
 
-// ClientFor returns the cached *genai.Client for location, creating it from
-// context.Background() on first use without holding the cache mutex across
-// genai.NewClient.
+// ClientFor returns the cached *genai.Client for location, creating it on first
+// use without holding the cache mutex across genai.NewClient. A process-wide
+// background context is used intentionally so cloud.google.com/go/auth ADC
+// token refresh outlives individual HTTP request contexts.
 func (p *ClientPool) ClientFor(location string) (*genai.Client, error) {
-	key := location
-	if p.backend == genai.BackendGeminiAPI {
-		key = "gemini-api"
-	} else if key == "" {
-		key = DefaultLocation
-	}
+	key := p.cacheKey(location)
 
 	p.mu.Lock()
 	cached, ok := p.clients[key]
@@ -161,23 +156,7 @@ func (p *ClientPool) ClientFor(location string) (*genai.Client, error) {
 		return cached, nil
 	}
 
-	var cfg *genai.ClientConfig
-	if p.backend == genai.BackendGeminiAPI {
-		cfg = &genai.ClientConfig{
-			Backend:     genai.BackendGeminiAPI,
-			APIKey:      p.apiKey,
-			HTTPOptions: genai.HTTPOptions{BaseURL: p.baseURL},
-		}
-	} else {
-		cfg = &genai.ClientConfig{
-			Backend:     genai.BackendVertexAI,
-			Project:     p.projectID,
-			Location:    key,
-			HTTPOptions: genai.HTTPOptions{BaseURL: BaseURLForLocation(p.baseURL, key, p.knownLocations...)},
-		}
-	}
-
-	created, err := genai.NewClient(context.Background(), cfg)
+	created, err := genai.NewClient(context.Background(), p.clientConfig(key))
 	if err != nil {
 		return nil, fmt.Errorf("creating genai client for %q: %w", key, err)
 	}
@@ -240,4 +219,30 @@ func BaseURLForLocation(base, location string, knownLocations ...string) string 
 	}
 	u.Host = newHost
 	return u.String()
+}
+
+func (p *ClientPool) cacheKey(location string) string {
+	if p.backend == genai.BackendGeminiAPI {
+		return "gemini-api"
+	}
+	if location == "" {
+		return DefaultLocation
+	}
+	return location
+}
+
+func (p *ClientPool) clientConfig(key string) *genai.ClientConfig {
+	if p.backend == genai.BackendGeminiAPI {
+		return &genai.ClientConfig{
+			Backend:     genai.BackendGeminiAPI,
+			APIKey:      p.apiKey,
+			HTTPOptions: genai.HTTPOptions{BaseURL: p.baseURL},
+		}
+	}
+	return &genai.ClientConfig{
+		Backend:     genai.BackendVertexAI,
+		Project:     p.projectID,
+		Location:    key,
+		HTTPOptions: genai.HTTPOptions{BaseURL: BaseURLForLocation(p.baseURL, key, p.knownLocations...)},
+	}
 }

@@ -36,6 +36,68 @@ import (
 	"github.com/ghchinoy/livebridge"
 )
 
+func TestAvatarDesk_DynamicPresetCustomAndSquareRejection(t *testing.T) {
+	cc := &captureConnector{}
+	srv := httptest.NewServer(newMux(cc, livebridge.DefaultModel))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/config")
+	if err != nil {
+		t.Fatalf("http.Get(/api/config) failed: %v", err)
+	}
+	var cfgBody map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&cfgBody)
+	_ = resp.Body.Close()
+	if got := cfgBody["defaultModel"]; got != livebridge.DefaultModel {
+		t.Errorf("newMux(/api/config) defaultModel = %v, want %q", got, livebridge.DefaultModel)
+	}
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws"
+
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("websocket.Dial(%q) failed: %v", wsURL, err)
+	}
+	_ = conn.WriteJSON(map[string]any{
+		"mode":       "avatar",
+		"avatarType": "custom",
+		"avatarData": makePNGDataURL(t, 704, 1280),
+		"voiceName":  "Aoede",
+	})
+	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	var info map[string]any
+	if err := conn.ReadJSON(&info); err != nil || info["mode"] != "avatar" {
+		t.Fatalf("newMux(/ws, custom 704x1280) session_info = %+v (err=%v), want mode=\"avatar\"", info, err)
+	}
+	_ = conn.Close()
+
+	cc.mu.Lock()
+	dialed := cc.lastCfg
+	cc.mu.Unlock()
+	if dialed == nil || len(dialed.ResponseModalities) != 1 || dialed.ResponseModalities[0] != genai.ModalityVideo {
+		t.Fatalf("newMux(/ws, ModeAvatar) ResponseModalities = %+v, want [VIDEO]", dialed)
+	}
+	if dialed.AvatarConfig == nil || dialed.AvatarConfig.CustomizedAvatar == nil {
+		t.Errorf("newMux(/ws, custom 704x1280).AvatarConfig = %+v, want non-nil CustomizedAvatar", dialed.AvatarConfig)
+	}
+
+	badConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("websocket.Dial(%q) failed: %v", wsURL, err)
+	}
+	defer func() { _ = badConn.Close() }()
+	_ = badConn.WriteJSON(map[string]any{
+		"mode":       "avatar",
+		"avatarData": makePNGDataURL(t, 1024, 1024),
+	})
+	_ = badConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_, _, closeErr := badConn.ReadMessage()
+	var ce *websocket.CloseError
+	if !errors.As(closeErr, &ce) || ce.Code != websocket.CloseInvalidFramePayloadData {
+		t.Errorf("newMux(/ws, square 1024x1024) closeErr = %v, want CloseInvalidFramePayloadData (1007)", closeErr)
+	}
+}
+
 type captureConnector struct {
 	mu      sync.Mutex
 	lastCfg *genai.LiveConnectConfig
@@ -70,72 +132,7 @@ func makePNGDataURL(t *testing.T, w, h int) string {
 	img := image.NewNRGBA(image.Rect(0, 0, w, h))
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, img); err != nil {
-		t.Fatal(err)
+		t.Fatalf("png.Encode(%dx%d) failed: %v", w, h, err)
 	}
 	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(buf.Bytes())
-}
-
-func TestAvatarDesk_DynamicPresetCustomAndSquareRejection(t *testing.T) {
-	cc := &captureConnector{}
-	srv := httptest.NewServer(newMux(cc, livebridge.DefaultModel))
-	defer srv.Close()
-
-	// 1. /api/config returns presets.
-	resp, err := http.Get(srv.URL + "/api/config")
-	if err != nil {
-		t.Fatalf("GET /api/config: %v", err)
-	}
-	var cfgBody map[string]any
-	_ = json.NewDecoder(resp.Body).Decode(&cfgBody)
-	_ = resp.Body.Close()
-	if cfgBody["defaultModel"] != livebridge.DefaultModel {
-		t.Fatalf("unexpected /api/config: %+v", cfgBody)
-	}
-
-	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws"
-
-	// 2. Valid custom 704x1280 portrait avatar configures ModalityVideo + CustomizedAvatar.
-	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-	if err != nil {
-		t.Fatalf("dial /ws: %v", err)
-	}
-	_ = conn.WriteJSON(map[string]any{
-		"mode":       "avatar",
-		"avatarType": "custom",
-		"avatarData": makePNGDataURL(t, 704, 1280),
-		"voiceName":  "Aoede",
-	})
-	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	var info map[string]any
-	if err := conn.ReadJSON(&info); err != nil || info["mode"] != "avatar" {
-		t.Fatalf("expected avatar session_info, got %+v (err=%v)", info, err)
-	}
-	_ = conn.Close()
-
-	cc.mu.Lock()
-	dialed := cc.lastCfg
-	cc.mu.Unlock()
-	if dialed == nil || len(dialed.ResponseModalities) != 1 || dialed.ResponseModalities[0] != genai.ModalityVideo {
-		t.Fatalf("expected [VIDEO] modality, got %+v", dialed)
-	}
-	if dialed.AvatarConfig == nil || dialed.AvatarConfig.CustomizedAvatar == nil {
-		t.Fatal("expected CustomizedAvatar populated")
-	}
-
-	// 3. Square 1024x1024 custom avatar fails pre-dial with 1007.
-	badConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-	if err != nil {
-		t.Fatalf("dial /ws: %v", err)
-	}
-	defer func() { _ = badConn.Close() }()
-	_ = badConn.WriteJSON(map[string]any{
-		"mode":       "avatar",
-		"avatarData": makePNGDataURL(t, 1024, 1024),
-	})
-	_ = badConn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	_, _, closeErr := badConn.ReadMessage()
-	var ce *websocket.CloseError
-	if !errors.As(closeErr, &ce) || ce.Code != websocket.CloseInvalidFramePayloadData {
-		t.Fatalf("expected 1007 close for square avatar, got %v", closeErr)
-	}
 }

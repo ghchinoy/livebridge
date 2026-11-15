@@ -42,6 +42,20 @@ type incidentRequest struct {
 	Logs    string `json:"logs"`
 }
 
+func main() {
+	clients, err := livebridge.NewClientPoolFromEnv()
+	if err != nil {
+		log.Fatal(err)
+	}
+	alerts := livebridge.NewAlertBus(16)
+	port := envOr("PORT", "8084")
+	model := envOr("GEMINI_LIVE_MODEL", livebridge.DefaultModel)
+
+	addr := ":" + port
+	slog.Info("Ops Watchtower backend listening", "url", "http://localhost"+addr, "model", model)
+	log.Fatal(livebridge.NewHTTPServer(addr, newWatchtowerMux(clients, alerts, model)).ListenAndServe())
+}
+
 func newWatchtowerMux(connector livebridge.Connector, alerts *livebridge.AlertBus, defaultModel string) *http.ServeMux {
 	origins := livebridge.NewOriginPolicyFromEnv()
 	mux := http.NewServeMux()
@@ -114,20 +128,6 @@ func newWatchtowerMux(connector livebridge.Connector, alerts *livebridge.AlertBu
 		mux.Handle("/", http.FileServer(http.Dir("frontend/dist")))
 	}
 	return mux
-}
-
-func main() {
-	clients, err := livebridge.NewClientPoolFromEnv()
-	if err != nil {
-		log.Fatal(err)
-	}
-	alerts := livebridge.NewAlertBus(16)
-	port := envOr("PORT", "8084")
-	model := envOr("GEMINI_LIVE_MODEL", livebridge.DefaultModel)
-
-	addr := ":" + port
-	slog.Info("Ops Watchtower backend listening", "url", "http://localhost"+addr, "model", model)
-	log.Fatal(livebridge.NewHTTPServer(addr, newWatchtowerMux(clients, alerts, model)).ListenAndServe())
 }
 
 func envOr(key, fallback string) string {

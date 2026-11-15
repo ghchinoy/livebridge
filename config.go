@@ -22,10 +22,14 @@ import (
 	"google.golang.org/genai"
 )
 
-// Pointer helpers for optional SessionSpec fields.
-func Bool(v bool) *bool          { return &v }
+// Bool returns a pointer to v for populating optional SessionSpec flags.
+func Bool(v bool) *bool { return &v }
+
+// Float32 returns a pointer to v for populating optional SessionSpec sampling parameters.
 func Float32(v float32) *float32 { return &v }
-func Int32(v int32) *int32       { return &v }
+
+// Int32 returns a pointer to v for populating optional SessionSpec bitrates.
+func Int32(v int32) *int32 { return &v }
 
 // SessionSpec describes the desired Gemini Live session configuration. It can
 // be constructed statically in Go (FixedHandlerConfig) or unmarshaled from a
@@ -127,11 +131,7 @@ func MergeSessionSpec(base, client SessionSpec, allowedModels, allowedLocations 
 	if client.AvatarData != "" {
 		out.AvatarData = client.AvatarData
 		if client.AvatarType == "" {
-			if strings.HasPrefix(strings.TrimSpace(client.AvatarData), "data:") {
-				out.AvatarType = "custom"
-			} else {
-				out.AvatarType = "preset"
-			}
+			out.AvatarType = inferAvatarType(client.AvatarData)
 		}
 	}
 	if client.AvatarType != "" {
@@ -238,8 +238,8 @@ func BuildConnectConfig(spec SessionSpec) (*genai.LiveConnectConfig, error) {
 
 	languageCode := resolveLanguageCode(spec.LanguageCode)
 	instruction := buildSystemInstruction(spec)
-
 	voiceCfg := buildVoiceConfig(spec)
+
 	cfg := &genai.LiveConnectConfig{
 		ResponseModalities: []genai.Modality{modality},
 		SystemInstruction: &genai.Content{
@@ -267,15 +267,18 @@ func BuildConnectConfig(spec SessionSpec) (*genai.LiveConnectConfig, error) {
 	return cfg, nil
 }
 
+func inferAvatarType(avatarData string) string {
+	if strings.HasPrefix(strings.TrimSpace(avatarData), "data:") {
+		return "custom"
+	}
+	return "preset"
+}
+
 func buildAvatarConfig(spec SessionSpec) (*genai.AvatarConfig, error) {
 	avatarType := strings.ToLower(strings.TrimSpace(spec.AvatarType))
 	data := strings.TrimSpace(spec.AvatarData)
 	if avatarType == "" {
-		if strings.HasPrefix(data, "data:") {
-			avatarType = "custom"
-		} else {
-			avatarType = "preset"
-		}
+		avatarType = inferAvatarType(data)
 	}
 
 	var cfg *genai.AvatarConfig
@@ -396,24 +399,23 @@ func buildToolsConfig(spec SessionSpec) []*genai.Tool {
 }
 
 func applySamplingConfig(cfg *genai.LiveConnectConfig, spec SessionSpec) {
-	if InRange(spec.Temperature, 0, 2) {
-		cfg.Temperature = spec.Temperature
-	} else {
-		slog.Warn("ignoring out-of-range temperature (want 0..2)", "value", *spec.Temperature)
-	}
-	if InRange(spec.TopP, 0, 1) {
-		cfg.TopP = spec.TopP
-	} else {
-		slog.Warn("ignoring out-of-range topP (want 0..1)", "value", *spec.TopP)
-	}
-	if InRange(spec.TopK, 1, 1000) {
-		cfg.TopK = spec.TopK
-	} else {
-		slog.Warn("ignoring out-of-range topK (want 1..1000)", "value", *spec.TopK)
-	}
+	cfg.Temperature = clampFloatOption("temperature (want 0..2)", spec.Temperature, 0, 2)
+	cfg.TopP = clampFloatOption("topP (want 0..1)", spec.TopP, 0, 1)
+	cfg.TopK = clampFloatOption("topK (want 1..1000)", spec.TopK, 1, 1000)
 	if spec.MaxOutputTokens > 0 {
 		cfg.MaxOutputTokens = spec.MaxOutputTokens
 	}
+}
+
+func clampFloatOption(label string, v *float32, lo, hi float32) *float32 {
+	if v == nil {
+		return nil
+	}
+	if InRange(v, lo, hi) {
+		return v
+	}
+	slog.Warn("ignoring out-of-range "+label, "value", *v)
+	return nil
 }
 
 func applyProactivityConfig(cfg *genai.LiveConnectConfig, spec SessionSpec) {
@@ -457,31 +459,11 @@ func buildRealtimeInputConfig(spec SessionSpec) *genai.RealtimeInputConfig {
 			prefix := spec.PrefixPaddingMs
 			detection.PrefixPaddingMs = &prefix
 		}
-		if v := spec.StartOfSpeechSensitivity; v != "" {
-			if ValidStartSensitivity[v] {
-				detection.StartOfSpeechSensitivity = genai.StartSensitivity(v)
-			} else {
-				slog.Warn("ignoring unknown startOfSpeechSensitivity", "value", TruncateRunes(v, MaxLoggedValueRunes))
-			}
-		}
-		if v := spec.EndOfSpeechSensitivity; v != "" {
-			if ValidEndSensitivity[v] {
-				detection.EndOfSpeechSensitivity = genai.EndSensitivity(v)
-			} else {
-				slog.Warn("ignoring unknown endOfSpeechSensitivity", "value", TruncateRunes(v, MaxLoggedValueRunes))
-			}
-		}
+		detection.StartOfSpeechSensitivity = resolveStartSensitivity(spec.StartOfSpeechSensitivity)
+		detection.EndOfSpeechSensitivity = resolveEndSensitivity(spec.EndOfSpeechSensitivity)
 	}
 
-	var activityHandling genai.ActivityHandling
-	if v := spec.ActivityHandling; v != "" {
-		if ValidActivityHandling[v] {
-			activityHandling = genai.ActivityHandling(v)
-		} else {
-			slog.Warn("ignoring unknown activityHandling", "value", TruncateRunes(v, MaxLoggedValueRunes))
-		}
-	}
-
+	activityHandling := resolveActivityHandling(spec.ActivityHandling)
 	if detection == nil && activityHandling == "" {
 		return nil
 	}
@@ -489,4 +471,37 @@ func buildRealtimeInputConfig(spec SessionSpec) *genai.RealtimeInputConfig {
 		AutomaticActivityDetection: detection,
 		ActivityHandling:           activityHandling,
 	}
+}
+
+func resolveStartSensitivity(raw string) genai.StartSensitivity {
+	if raw == "" {
+		return ""
+	}
+	if ValidStartSensitivity[raw] {
+		return genai.StartSensitivity(raw)
+	}
+	slog.Warn("ignoring unknown startOfSpeechSensitivity", "value", TruncateRunes(raw, MaxLoggedValueRunes))
+	return ""
+}
+
+func resolveEndSensitivity(raw string) genai.EndSensitivity {
+	if raw == "" {
+		return ""
+	}
+	if ValidEndSensitivity[raw] {
+		return genai.EndSensitivity(raw)
+	}
+	slog.Warn("ignoring unknown endOfSpeechSensitivity", "value", TruncateRunes(raw, MaxLoggedValueRunes))
+	return ""
+}
+
+func resolveActivityHandling(raw string) genai.ActivityHandling {
+	if raw == "" {
+		return ""
+	}
+	if ValidActivityHandling[raw] {
+		return genai.ActivityHandling(raw)
+	}
+	slog.Warn("ignoring unknown activityHandling", "value", TruncateRunes(raw, MaxLoggedValueRunes))
+	return ""
 }

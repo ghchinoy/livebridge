@@ -18,6 +18,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -38,7 +39,7 @@ type FixedHandlerConfig struct {
 	// receives Registry.Declarations() and a per-session ToolRunner unless
 	// NewTools overrides it.
 	Registry    *FuncRegistry
-	ToolTimeout *Timings
+	ToolTimeout time.Duration
 	NewTools    func(r *http.Request, spec SessionSpec) *ToolRunner
 
 	AlertBus    *AlertBus
@@ -115,13 +116,7 @@ func NewFixedHandler(cfg FixedHandlerConfig) http.Handler {
 			return
 		}
 
-		var toolRunner *ToolRunner
-		if cfg.NewTools != nil {
-			toolRunner = cfg.NewTools(r, spec)
-		} else if cfg.Registry != nil {
-			toolRunner = NewToolRunner(ToolRunnerConfig{Registry: cfg.Registry})
-		}
-
+		toolRunner := buildFixedToolRunner(cfg, r, spec)
 		bCfg := populateBridgeConfig(cfg.Bridge, spec, !cfg.DisableSessionInfo, toolRunner, logger)
 		if cfg.AlertBus != nil && cfg.FormatAlert != nil {
 			alerts, unsub := cfg.AlertBus.Subscribe()
@@ -157,6 +152,7 @@ type DynamicHandlerConfig struct {
 	// initial setup payload ("tools": [...]) and relays calls over WebSocket.
 	AllowPageTools   bool
 	PageToolPolicy   PageToolPolicy
+	ToolTimeout      time.Duration
 	SeeVisualResults bool
 	EmitToolTiming   bool
 	NewTools         func(r *http.Request, spec SessionSpec) *ToolRunner
@@ -244,18 +240,7 @@ func NewDynamicHandler(cfg DynamicHandlerConfig) http.Handler {
 			return
 		}
 
-		var toolRunner *ToolRunner
-		if cfg.NewTools != nil {
-			toolRunner = cfg.NewTools(r, spec)
-		} else if cfg.Registry != nil || cfg.AllowPageTools {
-			toolRunner = NewToolRunner(ToolRunnerConfig{
-				Registry:         cfg.Registry,
-				AllowPageRelay:   cfg.AllowPageTools,
-				SeeVisualResults: cfg.SeeVisualResults,
-				EmitTiming:       cfg.EmitToolTiming,
-			})
-		}
-
+		toolRunner := buildDynamicToolRunner(cfg, r, spec)
 		bCfg := populateBridgeConfig(cfg.Bridge, spec, !cfg.DisableSessionInfo, toolRunner, logger)
 		if cfg.AlertBus != nil && cfg.FormatAlert != nil {
 			alerts, unsub := cfg.AlertBus.Subscribe()
@@ -268,6 +253,35 @@ func NewDynamicHandler(cfg DynamicHandlerConfig) http.Handler {
 		defer bridge.Shutdown(0, "")
 		bridge.Run()
 	})
+}
+
+func buildFixedToolRunner(cfg FixedHandlerConfig, r *http.Request, spec SessionSpec) *ToolRunner {
+	if cfg.NewTools != nil {
+		return cfg.NewTools(r, spec)
+	}
+	if cfg.Registry != nil {
+		return NewToolRunner(ToolRunnerConfig{
+			Registry: cfg.Registry,
+			Timeout:  cfg.ToolTimeout,
+		})
+	}
+	return nil
+}
+
+func buildDynamicToolRunner(cfg DynamicHandlerConfig, r *http.Request, spec SessionSpec) *ToolRunner {
+	if cfg.NewTools != nil {
+		return cfg.NewTools(r, spec)
+	}
+	if cfg.Registry != nil || cfg.AllowPageTools {
+		return NewToolRunner(ToolRunnerConfig{
+			Registry:         cfg.Registry,
+			AllowPageRelay:   cfg.AllowPageTools,
+			Timeout:          cfg.ToolTimeout,
+			SeeVisualResults: cfg.SeeVisualResults,
+			EmitTiming:       cfg.EmitToolTiming,
+		})
+	}
+	return nil
 }
 
 func populateBridgeConfig(base BridgeConfig, spec SessionSpec, emitInfo bool, tools *ToolRunner, logger *slog.Logger) BridgeConfig {

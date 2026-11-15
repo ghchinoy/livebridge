@@ -126,27 +126,10 @@ func DeclarationsFromPageTools(tools []PageTool, policy PageToolPolicy) (decls [
 	return decls, rejected
 }
 
-func unwrapJSONSchema(raw json.RawMessage) json.RawMessage {
-	trimmed := bytes.TrimSpace(raw)
-	if len(trimmed) == 0 || trimmed[0] != '"' {
-		return raw
-	}
-	var inner string
-	if err := json.Unmarshal(trimmed, &inner); err != nil {
-		return raw
-	}
-	return json.RawMessage(inner)
-}
-
 // ToolFunc executes a server-side Gemini Live function call. Returning an error
 // converts it into a structured {"error": ...} FunctionResponse payload rather
 // than dropping the session.
 type ToolFunc func(ctx context.Context, args map[string]any) (map[string]any, error)
-
-type registeredFunc struct {
-	decl *genai.FunctionDeclaration
-	fn   ToolFunc
-}
 
 // FuncRegistry stores server-side Gemini Live FunctionDeclarations and their
 // corresponding Go handlers.
@@ -244,12 +227,6 @@ type ToolRunnerConfig struct {
 	CancelEventType string
 }
 
-type pendingPageCall struct {
-	name    string
-	started time.Time
-	timer   *time.Timer
-}
-
 // ToolRunner dispatches FunctionCalls off the Live Receive() goroutine, tracks
 // in-flight server and browser calls by ID, handles ToolCallCancellation on
 // barge-in, and cleans up timers and goroutines on session shutdown.
@@ -314,120 +291,6 @@ func (tr *ToolRunner) Dispatch(
 		}
 		tr.dispatchServerCall(sessionCtx, call, writeJSON, sendResponses, onSendErr)
 	}
-}
-
-func (tr *ToolRunner) dispatchServerCall(
-	sessionCtx context.Context,
-	call *genai.FunctionCall,
-	writeJSON func(any),
-	sendResponses func([]*genai.FunctionResponse) error,
-	onSendErr func(what string, err error),
-) {
-	callCtx, cancel := context.WithTimeout(sessionCtx, tr.cfg.Timeout)
-
-	tr.mu.Lock()
-	if tr.closed {
-		tr.mu.Unlock()
-		cancel()
-		return
-	}
-	if call.ID != "" {
-		if prev, ok := tr.activeServer[call.ID]; ok {
-			prev()
-		}
-		tr.activeServer[call.ID] = cancel
-	}
-	tr.wg.Add(1)
-	tr.mu.Unlock()
-
-	go func(c *genai.FunctionCall) {
-		defer tr.wg.Done()
-		defer cancel()
-
-		result := tr.cfg.Registry.Execute(callCtx, c.Name, c.Args)
-
-		tr.mu.Lock()
-		_, stillActive := tr.activeServer[c.ID]
-		if c.ID != "" {
-			delete(tr.activeServer, c.ID)
-		}
-		closed := tr.closed
-		tr.mu.Unlock()
-
-		if closed || (c.ID != "" && !stillActive) || sessionCtx.Err() != nil {
-			return
-		}
-
-		writeJSON(map[string]any{
-			"type":   tr.cfg.ServerToolEventType,
-			"id":     c.ID,
-			"name":   c.Name,
-			"args":   c.Args,
-			"result": result,
-		})
-		if err := sendResponses([]*genai.FunctionResponse{{ID: c.ID, Name: c.Name, Response: result}}); err != nil && onSendErr != nil {
-			onSendErr("tool response", err)
-		}
-	}(call)
-}
-
-func (tr *ToolRunner) dispatchPageCall(
-	call *genai.FunctionCall,
-	writeJSON func(any),
-	sendResponses func([]*genai.FunctionResponse) error,
-	onSendErr func(what string, err error),
-) {
-	id, name := call.ID, call.Name
-
-	tr.mu.Lock()
-	if tr.closed {
-		tr.mu.Unlock()
-		return
-	}
-	if prev := tr.pendingPage[id]; prev != nil {
-		prev.timer.Stop()
-	}
-	tr.pendingPage[id] = &pendingPageCall{
-		name:    name,
-		started: time.Now(),
-		timer: time.AfterFunc(tr.cfg.Timeout, func() {
-			if tr.takePendingPage(id) != nil {
-				slog.Warn("page tool call timed out", "name", name)
-				writeJSON(map[string]any{
-					"type":   tr.cfg.CancelEventType,
-					"ids":    []string{id},
-					"reason": "timeout",
-				})
-				errResp := []*genai.FunctionResponse{{
-					ID:       id,
-					Name:     name,
-					Response: map[string]any{"error": "the page did not answer in time"},
-				}}
-				if err := sendResponses(errResp); err != nil && onSendErr != nil {
-					onSendErr("tool timeout response", err)
-				}
-			}
-		}),
-	}
-	tr.mu.Unlock()
-
-	writeJSON(map[string]any{
-		"type": "tool_call",
-		"id":   id,
-		"name": name,
-		"args": call.Args,
-	})
-}
-
-func (tr *ToolRunner) takePendingPage(id string) *pendingPageCall {
-	tr.mu.Lock()
-	defer tr.mu.Unlock()
-	p := tr.pendingPage[id]
-	if p != nil {
-		p.timer.Stop()
-		delete(tr.pendingPage, id)
-	}
-	return p
 }
 
 // CompletePageCall processes a browser tool_response / tool_result frame. When
@@ -567,4 +430,141 @@ func (tr *ToolRunner) Close() {
 	}
 	tr.CancelAll()
 	tr.wg.Wait()
+}
+
+type registeredFunc struct {
+	decl *genai.FunctionDeclaration
+	fn   ToolFunc
+}
+
+type pendingPageCall struct {
+	name    string
+	started time.Time
+	timer   *time.Timer
+}
+
+func unwrapJSONSchema(raw json.RawMessage) json.RawMessage {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || trimmed[0] != '"' {
+		return raw
+	}
+	var inner string
+	if err := json.Unmarshal(trimmed, &inner); err != nil {
+		return raw
+	}
+	return json.RawMessage(inner)
+}
+
+func (tr *ToolRunner) dispatchServerCall(
+	sessionCtx context.Context,
+	call *genai.FunctionCall,
+	writeJSON func(any),
+	sendResponses func([]*genai.FunctionResponse) error,
+	onSendErr func(what string, err error),
+) {
+	callCtx, cancel := context.WithTimeout(sessionCtx, tr.cfg.Timeout)
+
+	tr.mu.Lock()
+	if tr.closed {
+		tr.mu.Unlock()
+		cancel()
+		return
+	}
+	if call.ID != "" {
+		if prev, ok := tr.activeServer[call.ID]; ok {
+			prev()
+		}
+		tr.activeServer[call.ID] = cancel
+	}
+	tr.wg.Add(1)
+	tr.mu.Unlock()
+
+	go func(c *genai.FunctionCall) {
+		defer tr.wg.Done()
+		defer cancel()
+
+		result := tr.cfg.Registry.Execute(callCtx, c.Name, c.Args)
+
+		tr.mu.Lock()
+		_, stillActive := tr.activeServer[c.ID]
+		if c.ID != "" {
+			delete(tr.activeServer, c.ID)
+		}
+		closed := tr.closed
+		tr.mu.Unlock()
+
+		if closed || (c.ID != "" && !stillActive) || sessionCtx.Err() != nil {
+			return
+		}
+
+		writeJSON(map[string]any{
+			"type":   tr.cfg.ServerToolEventType,
+			"id":     c.ID,
+			"name":   c.Name,
+			"args":   c.Args,
+			"result": result,
+		})
+		if err := sendResponses([]*genai.FunctionResponse{{ID: c.ID, Name: c.Name, Response: result}}); err != nil && onSendErr != nil {
+			onSendErr("tool response", err)
+		}
+	}(call)
+}
+
+func (tr *ToolRunner) dispatchPageCall(
+	call *genai.FunctionCall,
+	writeJSON func(any),
+	sendResponses func([]*genai.FunctionResponse) error,
+	onSendErr func(what string, err error),
+) {
+	id, name := call.ID, call.Name
+
+	tr.mu.Lock()
+	if tr.closed {
+		tr.mu.Unlock()
+		return
+	}
+	if prev := tr.pendingPage[id]; prev != nil {
+		prev.timer.Stop()
+	}
+	tr.pendingPage[id] = &pendingPageCall{
+		name:    name,
+		started: time.Now(),
+		timer: time.AfterFunc(tr.cfg.Timeout, func() {
+			if tr.takePendingPage(id) != nil {
+				slog.Warn("page tool call timed out", "name", name)
+				writeJSON(map[string]any{
+					"type":   tr.cfg.CancelEventType,
+					"ids":    []string{id},
+					"reason": "timeout",
+				})
+				errResp := []*genai.FunctionResponse{{
+					ID:       id,
+					Name:     name,
+					Response: map[string]any{"error": "the page did not answer in time"},
+				}}
+				if err := sendResponses(errResp); err != nil && onSendErr != nil {
+					onSendErr("tool timeout response", err)
+				}
+			}
+		}),
+	}
+	tr.mu.Unlock()
+
+	writeJSON(map[string]any{
+		"type": "tool_call",
+		"id":   id,
+		"name": name,
+		"args": call.Args,
+	})
+}
+
+func (tr *ToolRunner) takePendingPage(id string) *pendingPageCall {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	p := tr.pendingPage[id]
+	if p != nil {
+		p.timer.Stop()
+		delete(tr.pendingPage, id)
+	}
+	return p
 }

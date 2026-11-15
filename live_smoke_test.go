@@ -34,7 +34,7 @@ func TestLiveSmoke(t *testing.T) {
 
 	clients, err := NewClientPoolFromEnv()
 	if err != nil {
-		t.Fatalf("NewClientPoolFromEnv: %v", err)
+		t.Fatalf("NewClientPoolFromEnv() failed: %v", err)
 	}
 	model := os.Getenv("GEMINI_LIVE_MODEL")
 	if model == "" {
@@ -55,7 +55,7 @@ func TestLiveSmoke(t *testing.T) {
 
 		conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http"), nil)
 		if err != nil {
-			t.Fatalf("dial: %v", err)
+			t.Fatalf("websocket.Dial(%q) failed: %v", srv.URL, err)
 		}
 		defer func() { _ = conn.Close() }()
 
@@ -78,7 +78,7 @@ func TestLiveSmoke(t *testing.T) {
 
 		conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http"), nil)
 		if err != nil {
-			t.Fatalf("dial: %v", err)
+			t.Fatalf("websocket.Dial(%q) failed: %v", srv.URL, err)
 		}
 		defer func() { _ = conn.Close() }()
 
@@ -88,7 +88,7 @@ func TestLiveSmoke(t *testing.T) {
 
 func waitForBinaryMedia(t *testing.T, conn *websocket.Conn, wantMimePrefix string) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 25*time.Second)
 	defer cancel()
 	_ = conn.SetReadDeadline(time.Now().Add(25 * time.Second))
 
@@ -96,20 +96,20 @@ func waitForBinaryMedia(t *testing.T, conn *websocket.Conn, wantMimePrefix strin
 	for ctx.Err() == nil {
 		msgType, data, err := conn.ReadMessage()
 		if err != nil {
-			t.Fatalf("reading frame: %v", err)
+			t.Fatalf("conn.ReadMessage(%q) failed: %v", wantMimePrefix, err)
 		}
 		if msgType == websocket.TextMessage && strings.Contains(string(data), `"media_config"`) {
 			if !strings.Contains(string(data), wantMimePrefix) {
-				t.Fatalf("unexpected media_config: %s", string(data))
+				t.Fatalf("Bridge.sendMediaConfigOnce() = %q, want substring %q", string(data), wantMimePrefix)
 			}
 			sawConfig = true
 		}
 		if msgType == websocket.BinaryMessage && len(data) > 0 {
 			if !sawConfig {
-				t.Fatal("received binary media frame before media_config")
+				t.Fatalf("Bridge.relayInlineMedia(%q) emitted binary frame before media_config", wantMimePrefix)
 			}
 			return
 		}
 	}
-	t.Fatal("timed out waiting for binary media")
+	t.Fatalf("waitForBinaryMedia(%q) timed out after 25s", wantMimePrefix)
 }

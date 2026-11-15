@@ -19,6 +19,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -126,8 +127,9 @@ type BridgeConfig struct {
 	Logger *slog.Logger
 }
 
-// Bridge owns a single browser WebSocket <-> Gemini Live session pair,
-// guaranteeing serialized writes and race-free dual teardown on every exit path.
+// Bridge owns a single request-scoped browser WebSocket <-> Gemini Live session
+// pair, guaranteeing serialized writes and race-free dual teardown on every
+// exit path.
 type Bridge struct {
 	ws       *SafeConn
 	upstream Session
@@ -151,7 +153,8 @@ type Bridge struct {
 	warnVideoMIME   sync.Once
 }
 
-// NewBridge constructs a Bridge bound to parentCtx.
+// NewBridge constructs a Bridge bound to parentCtx (typically r.Context() inside
+// the WebSocket HTTP handler).
 func NewBridge(parentCtx context.Context, ws *SafeConn, upstream Session, cfg BridgeConfig) *Bridge {
 	if parentCtx == nil {
 		parentCtx = context.Background()
@@ -185,12 +188,6 @@ func NewBridge(parentCtx context.Context, ws *SafeConn, upstream Session, cfg Br
 		logger:     logger,
 		setupReady: make(chan struct{}),
 	}
-}
-
-func (b *Bridge) markSetupReady() {
-	b.setupOnce.Do(func() {
-		close(b.setupReady)
-	})
 }
 
 // Context returns the session's cancellation context.
@@ -229,13 +226,6 @@ func (b *Bridge) Forward(what string, send func() error) {
 	if err := send(); err != nil {
 		b.onUpstreamSendErr(what, err)
 	}
-}
-
-func (b *Bridge) onUpstreamSendErr(what string, err error) {
-	if b.ctx.Err() == nil {
-		b.logger.Warn("sending to Live session", "what", what, "err", err)
-	}
-	b.Shutdown(websocket.CloseInternalServerErr, "Session disconnected")
 }
 
 // Run pumps messages in both directions until either side ends the session or a
@@ -297,6 +287,19 @@ func (b *Bridge) Shutdown(code int, reason string) {
 		_ = b.upstream.Close()
 		_ = b.ws.Close()
 	})
+}
+
+func (b *Bridge) markSetupReady() {
+	b.setupOnce.Do(func() {
+		close(b.setupReady)
+	})
+}
+
+func (b *Bridge) onUpstreamSendErr(what string, err error) {
+	if b.ctx.Err() == nil {
+		b.logger.Warn("sending to Live session", "what", what, "err", err)
+	}
+	b.Shutdown(websocket.CloseInternalServerErr, "Session disconnected")
 }
 
 func (b *Bridge) stopTimers() {
@@ -367,21 +370,7 @@ func (b *Bridge) receiveLoop() {
 		}
 
 		if msg.SetupComplete != nil {
-			if b.cfg.OnSetupComplete != nil {
-				b.cfg.OnSetupComplete(b)
-			}
-			if b.cfg.GreetingPrompt != "" {
-				b.logger.Debug("setup complete; sending greeting prompt")
-				prompt := b.cfg.GreetingPrompt
-				go func() {
-					b.Forward("greeting prompt", func() error {
-						return b.SendRealtime(genai.LiveSendRealtimeInputParameters{Text: prompt})
-					})
-					b.markSetupReady()
-				}()
-			} else {
-				b.markSetupReady()
-			}
+			b.handleSetupComplete()
 		}
 		if msg.ServerContent != nil && !b.handleServerContent(msg.ServerContent) {
 			return
@@ -391,14 +380,36 @@ func (b *Bridge) receiveLoop() {
 			b.cfg.Tools.Dispatch(b.ctx, msg.ToolCall, b.WriteJSON, b.SendRealtime, b.SendToolResponses, b.onUpstreamSendErr)
 		}
 		if msg.ToolCallCancellation != nil && len(msg.ToolCallCancellation.IDs) > 0 {
-			b.logger.Info("tool calls cancelled", "ids", msg.ToolCallCancellation.IDs)
-			if b.cfg.Tools != nil {
-				b.cfg.Tools.Cancel(msg.ToolCallCancellation.IDs, b.WriteJSON)
-			} else {
-				b.WriteJSON(map[string]any{"type": "tool_call_cancellation", "ids": msg.ToolCallCancellation.IDs})
-			}
+			b.handleToolCancellation(msg.ToolCallCancellation.IDs)
 		}
 	}
+}
+
+func (b *Bridge) handleSetupComplete() {
+	if b.cfg.OnSetupComplete != nil {
+		b.cfg.OnSetupComplete(b)
+	}
+	if b.cfg.GreetingPrompt == "" {
+		b.markSetupReady()
+		return
+	}
+	b.logger.Debug("setup complete; sending greeting prompt")
+	prompt := b.cfg.GreetingPrompt
+	go func() {
+		b.Forward("greeting prompt", func() error {
+			return b.SendRealtime(genai.LiveSendRealtimeInputParameters{Text: prompt})
+		})
+		b.markSetupReady()
+	}()
+}
+
+func (b *Bridge) handleToolCancellation(ids []string) {
+	b.logger.Info("tool calls cancelled", "ids", ids)
+	if b.cfg.Tools != nil {
+		b.cfg.Tools.Cancel(ids, b.WriteJSON)
+		return
+	}
+	b.WriteJSON(map[string]any{"type": "tool_call_cancellation", "ids": ids})
 }
 
 func (b *Bridge) handleServerContent(content *genai.LiveServerContent) bool {
@@ -408,7 +419,9 @@ func (b *Bridge) handleServerContent(content *genai.LiveServerContent) bool {
 				if !b.relayInlineMedia(part.InlineData) {
 					return false
 				}
-			} else if part.Text != "" {
+				continue
+			}
+			if part.Text != "" {
 				b.WriteJSON(map[string]string{"type": "transcript", "text": part.Text})
 			}
 		}
@@ -474,11 +487,7 @@ func (b *Bridge) relayTranscription(messageType string, transcription *genai.Tra
 	b.logger.Debug("transcript", "type", messageType, "chars", len(transcription.Text), "finished", transcription.Finished)
 	var finished any = transcription.Finished
 	if b.cfg.StringifyTranscriptFinished {
-		if transcription.Finished {
-			finished = "true"
-		} else {
-			finished = "false"
-		}
+		finished = strconv.FormatBool(transcription.Finished)
 	}
 	b.WriteJSON(map[string]any{
 		"type":     messageType,
@@ -522,19 +531,27 @@ func (b *Bridge) clientLoop() {
 			}
 			return
 		}
-		var msg ClientMessage
-		if err := json.Unmarshal(data, &msg); err != nil {
-			if b.cfg.AllowPlainTextFrames {
-				msg = ClientMessage{Type: "text", Data: string(data)}
-			} else {
-				if b.ctx.Err() == nil {
-					b.logger.Warn("reading JSON from browser", "err", err)
-				}
-				return
-			}
+		msg, ok := b.decodeClientFrame(data)
+		if !ok {
+			return
 		}
 		b.handleClientMessage(msg)
 	}
+}
+
+func (b *Bridge) decodeClientFrame(data []byte) (ClientMessage, bool) {
+	var msg ClientMessage
+	err := json.Unmarshal(data, &msg)
+	if err == nil {
+		return msg, true
+	}
+	if b.cfg.AllowPlainTextFrames {
+		return ClientMessage{Type: "text", Data: string(data)}, true
+	}
+	if b.ctx.Err() == nil {
+		b.logger.Warn("reading JSON from browser", "err", err)
+	}
+	return ClientMessage{}, false
 }
 
 func (b *Bridge) handleClientMessage(msg ClientMessage) {

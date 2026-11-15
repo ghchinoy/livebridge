@@ -35,6 +35,20 @@ var (
 	presetVoices  = []string{"Kore", "Puck", "Aoede", "Charon", "Fenrir", "Leda"}
 )
 
+func main() {
+	clients, err := livebridge.NewClientPoolFromEnv()
+	if err != nil {
+		log.Fatal(err)
+	}
+	port := envOr("PORT", "8082")
+	model := envOr("GEMINI_LIVE_MODEL", livebridge.DefaultModel)
+
+	addr := ":" + port
+	slog.Info("Avatar Desk backend listening", "url", "http://localhost"+addr, "model", model)
+	srv := livebridge.NewHTTPServer(addr, newMux(clients, model))
+	log.Fatal(srv.ListenAndServe())
+}
+
 func newMux(connector livebridge.Connector, defaultModel string) *http.ServeMux {
 	origins := livebridge.NewOriginPolicyFromEnv()
 	mux := http.NewServeMux()
@@ -49,8 +63,6 @@ func newMux(connector livebridge.Connector, defaultModel string) *http.ServeMux 
 		})
 	}))
 
-	// /ws defaults to ModeAvatar (fMP4 muxed H.264 + AAC), while allowing the
-	// client setup frame to switch mode, preset/custom avatar, voice, & persona.
 	mux.Handle("GET /ws", livebridge.NewDynamicHandler(livebridge.DynamicHandlerConfig{
 		Connector:        connector,
 		OriginPolicy:     origins,
@@ -75,20 +87,6 @@ func newMux(connector livebridge.Connector, defaultModel string) *http.ServeMux 
 		mux.Handle("/", http.FileServer(http.Dir("frontend/dist")))
 	}
 	return mux
-}
-
-func main() {
-	clients, err := livebridge.NewClientPoolFromEnv()
-	if err != nil {
-		log.Fatal(err)
-	}
-	port := envOr("PORT", "8082")
-	model := envOr("GEMINI_LIVE_MODEL", livebridge.DefaultModel)
-
-	addr := ":" + port
-	slog.Info("Avatar Desk backend listening", "url", "http://localhost"+addr, "model", model)
-	srv := livebridge.NewHTTPServer(addr, newMux(clients, model))
-	log.Fatal(srv.ListenAndServe())
 }
 
 func envOr(key, fallback string) string {

@@ -21,6 +21,7 @@ import (
 	"image"
 	_ "image/jpeg" // Register JPEG header decoder for ParseImageDimensions.
 	_ "image/png"  // Register PNG header decoder for ParseImageDimensions.
+	"slices"
 	"strings"
 )
 
@@ -66,13 +67,14 @@ func SniffMP4(data []byte) SniffedMediaInfo {
 
 		typeStr := string(boxType[:])
 		payloadSize := int(boxSize) - 8
-		if boxSize == 1 {
+		switch boxSize {
+		case 1:
 			var extSize uint64
 			if err := binary.Read(buf, binary.BigEndian, &extSize); err != nil {
 				break
 			}
 			payloadSize = int(extSize) - 16
-		} else if boxSize == 0 {
+		case 0:
 			payloadSize = buf.Len()
 		}
 
@@ -94,12 +96,64 @@ func SniffMP4(data []byte) SniffedMediaInfo {
 	}
 
 	if len(info.Codecs) > 0 {
-		info.SuggestedMime = fmt.Sprintf("video/mp4; codecs=\"%s\"", strings.Join(info.Codecs, ", "))
-	} else if info.MajorBrand != "" {
+		info.SuggestedMime = fmt.Sprintf("video/mp4; codecs=%q", strings.Join(info.Codecs, ", "))
+		return info
+	}
+	if info.MajorBrand != "" {
 		info.SuggestedMime = "video/mp4"
 	}
-
 	return info
+}
+
+// ParseAvc1Dimensions extracts coded width and height from an ISO/IEC 14496-12
+// avc1 VisualSampleEntry payload.
+func ParseAvc1Dimensions(payload []byte) (width, height int, ok bool) {
+	idx := bytes.Index(payload, []byte("avc1"))
+	if idx == -1 {
+		return 0, 0, false
+	}
+	widthOff := idx + 4 + 6 + 2 + 2 + 2 + 12
+	if widthOff+4 > len(payload) {
+		return 0, 0, false
+	}
+	w := binary.BigEndian.Uint16(payload[widthOff : widthOff+2])
+	h := binary.BigEndian.Uint16(payload[widthOff+2 : widthOff+4])
+	if w == 0 || h == 0 {
+		return 0, 0, false
+	}
+	return int(w), int(h), true
+}
+
+// ParseImageDimensions decodes only the PNG or JPEG header from data to read
+// its width and height without allocating pixel buffers.
+func ParseImageDimensions(data []byte) (width, height int, err error) {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return 0, 0, fmt.Errorf("decoding image header: %w", err)
+	}
+	return cfg.Width, cfg.Height, nil
+}
+
+// ValidateCustomAvatarDimensions checks that width and height meet Gemini Live
+// CustomizedAvatar portrait (704x1280+) or landscape (1280x704+) requirements
+// and are non-square (square images such as 1024x1024 fail upstream with 1007).
+func ValidateCustomAvatarDimensions(width, height int) error {
+	if width <= 0 || height <= 0 {
+		return fmt.Errorf("invalid image dimensions %dx%d", width, height)
+	}
+	if width == height {
+		return fmt.Errorf("custom avatar image cannot be square (%dx%d); use portrait (>=704x1280) or landscape (>=1280x704)", width, height)
+	}
+	if height > width {
+		if width < MinAvatarShortSide || height < MinAvatarLongSide {
+			return fmt.Errorf("portrait custom avatar (%dx%d) is below minimum %dx%d", width, height, MinAvatarShortSide, MinAvatarLongSide)
+		}
+		return nil
+	}
+	if width < MinAvatarLongSide || height < MinAvatarShortSide {
+		return fmt.Errorf("landscape custom avatar (%dx%d) is below minimum %dx%d", width, height, MinAvatarLongSide, MinAvatarShortSide)
+	}
+	return nil
 }
 
 func parseFtyp(payload []byte, info *SniffedMediaInfo) {
@@ -141,62 +195,9 @@ func parseAvc1Codec(payload []byte) string {
 	return "avc1.42C020"
 }
 
-// ParseAvc1Dimensions extracts coded width and height from an ISO/IEC 14496-12
-// avc1 VisualSampleEntry payload.
-func ParseAvc1Dimensions(payload []byte) (width, height int, ok bool) {
-	idx := bytes.Index(payload, []byte("avc1"))
-	if idx == -1 {
-		return 0, 0, false
-	}
-	widthOff := idx + 4 + 6 + 2 + 2 + 2 + 12
-	if widthOff+4 > len(payload) {
-		return 0, 0, false
-	}
-	w := binary.BigEndian.Uint16(payload[widthOff : widthOff+2])
-	h := binary.BigEndian.Uint16(payload[widthOff+2 : widthOff+4])
-	if w == 0 || h == 0 {
-		return 0, 0, false
-	}
-	return int(w), int(h), true
-}
-
 func addCodec(info *SniffedMediaInfo, codec string) {
-	for _, c := range info.Codecs {
-		if c == codec {
-			return
-		}
+	if slices.Contains(info.Codecs, codec) {
+		return
 	}
 	info.Codecs = append(info.Codecs, codec)
-}
-
-// ParseImageDimensions decodes only the PNG or JPEG header from data to read
-// its width and height without allocating pixel buffers.
-func ParseImageDimensions(data []byte) (width, height int, err error) {
-	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
-	if err != nil {
-		return 0, 0, fmt.Errorf("decoding image header: %w", err)
-	}
-	return cfg.Width, cfg.Height, nil
-}
-
-// ValidateCustomAvatarDimensions checks that width and height meet Gemini Live
-// CustomizedAvatar portrait (704x1280+) or landscape (1280x704+) requirements
-// and are non-square (square images such as 1024x1024 fail upstream with 1007).
-func ValidateCustomAvatarDimensions(width, height int) error {
-	if width <= 0 || height <= 0 {
-		return fmt.Errorf("invalid image dimensions %dx%d", width, height)
-	}
-	if width == height {
-		return fmt.Errorf("custom avatar image cannot be square (%dx%d); use portrait (>=704x1280) or landscape (>=1280x704)", width, height)
-	}
-	if height > width {
-		if width < MinAvatarShortSide || height < MinAvatarLongSide {
-			return fmt.Errorf("portrait custom avatar (%dx%d) is below minimum %dx%d", width, height, MinAvatarShortSide, MinAvatarLongSide)
-		}
-		return nil
-	}
-	if width < MinAvatarLongSide || height < MinAvatarShortSide {
-		return fmt.Errorf("landscape custom avatar (%dx%d) is below minimum %dx%d", width, height, MinAvatarLongSide, MinAvatarShortSide)
-	}
-	return nil
 }

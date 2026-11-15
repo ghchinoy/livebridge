@@ -24,36 +24,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/gorilla/websocket"
 	"google.golang.org/genai"
 )
 
-type fakeConnector struct {
-	mu          sync.Mutex
-	session     *fakeLiveSession
-	connectErr  error
-	lastModel   string
-	lastLoc     string
-	lastCfg     *genai.LiveConnectConfig
-	connectHits int
-}
-
-func (fc *fakeConnector) Connect(_ context.Context, model, location string, cfg *genai.LiveConnectConfig) (Session, error) {
-	fc.mu.Lock()
-	defer fc.mu.Unlock()
-	fc.connectHits++
-	fc.lastModel = model
-	fc.lastLoc = location
-	fc.lastCfg = cfg
-	if fc.connectErr != nil {
-		return nil, fc.connectErr
-	}
-	return fc.session, nil
-}
-
 func TestBuildConnectConfig_GuardrailsAndModalities(t *testing.T) {
-	// 1. Audio mode + proactive audio on 3.8 + compression + Google Search
-	audioCfg, err := BuildConnectConfig(SessionSpec{
+	audioSpec := SessionSpec{
 		Mode:                     ModeAudio,
 		Model:                    "gemini-3.8-live",
 		VoiceName:                "Puck",
@@ -66,66 +43,66 @@ func TestBuildConnectConfig_GuardrailsAndModalities(t *testing.T) {
 		CompressionTriggerTokens: 24000,
 		Temperature:              Float32(0.7),
 		TopP:                     Float32(2.5), // out-of-range -> dropped
-	})
-	if err != nil {
-		t.Fatalf("BuildConnectConfig(audio): %v", err)
 	}
-	if len(audioCfg.ResponseModalities) != 1 || audioCfg.ResponseModalities[0] != genai.ModalityAudio {
-		t.Fatalf("unexpected audio modalities: %v", audioCfg.ResponseModalities)
+	audioCfg, err := BuildConnectConfig(audioSpec)
+	if err != nil {
+		t.Fatalf("BuildConnectConfig(audioSpec) returned error: %v", err)
+	}
+	if diff := cmp.Diff([]genai.Modality{genai.ModalityAudio}, audioCfg.ResponseModalities); diff != "" {
+		t.Errorf("BuildConnectConfig(audioSpec).ResponseModalities diff (-want +got):\n%s", diff)
 	}
 	if audioCfg.AvatarConfig != nil {
-		t.Fatal("expected nil AvatarConfig in ModeAudio")
+		t.Errorf("BuildConnectConfig(audioSpec).AvatarConfig = %+v, want nil", audioCfg.AvatarConfig)
 	}
 	if audioCfg.Proactivity == nil || audioCfg.Proactivity.ProactiveAudio == nil || !*audioCfg.Proactivity.ProactiveAudio {
-		t.Fatal("expected ProactiveAudio enabled on gemini-3.8-live")
+		t.Errorf("BuildConnectConfig(audioSpec).Proactivity = %+v, want ProactiveAudio=true", audioCfg.Proactivity)
 	}
 	if audioCfg.ContextWindowCompression == nil || *audioCfg.ContextWindowCompression.TriggerTokens != 24000 {
-		t.Fatal("expected ContextWindowCompression TriggerTokens=24000")
+		t.Errorf("BuildConnectConfig(audioSpec).ContextWindowCompression = %+v, want TriggerTokens=24000", audioCfg.ContextWindowCompression)
 	}
 	if audioCfg.TopP != nil {
-		t.Fatalf("expected out-of-range TopP to be dropped, got %v", *audioCfg.TopP)
+		t.Errorf("BuildConnectConfig(TopP=2.5).TopP = %v, want nil", *audioCfg.TopP)
 	}
 	if audioCfg.RealtimeInputConfig != nil {
-		t.Fatal("expected nil RealtimeInputConfig when all VAD fields are unset")
+		t.Errorf("BuildConnectConfig(unset VAD).RealtimeInputConfig = %+v, want nil", audioCfg.RealtimeInputConfig)
 	}
 
-	// 2. ProactiveAudio gated off on full 3.5-flash
-	flashCfg, err := BuildConnectConfig(SessionSpec{
+	flashSpec := SessionSpec{
 		Mode:           ModeAudio,
 		Model:          "gemini-3.5-flash-live-preview",
 		ProactiveAudio: Bool(true),
-	})
+	}
+	flashCfg, err := BuildConnectConfig(flashSpec)
 	if err != nil {
-		t.Fatalf("BuildConnectConfig(3.5-flash): %v", err)
+		t.Fatalf("BuildConnectConfig(flashSpec) returned error: %v", err)
 	}
 	if flashCfg.Proactivity != nil {
-		t.Fatal("expected Proactivity nil on gemini-3.5-flash-live-preview")
+		t.Errorf("BuildConnectConfig(gemini-3.5-flash-live-preview).Proactivity = %+v, want nil", flashCfg.Proactivity)
 	}
 
-	// 3. Avatar mode uses VIDEO alone and validates custom PNG dimensions
 	portraitURL := encodePNGDataURL(t, 704, 1280)
-	avatarCfg, err := BuildConnectConfig(SessionSpec{
+	avatarSpec := SessionSpec{
 		Mode:            ModeAvatar,
 		AvatarData:      portraitURL,
 		VideoBitrateBps: Int32(1_000_000),
-	})
-	if err != nil {
-		t.Fatalf("BuildConnectConfig(custom portrait avatar): %v", err)
 	}
-	if len(avatarCfg.ResponseModalities) != 1 || avatarCfg.ResponseModalities[0] != genai.ModalityVideo {
-		t.Fatalf("expected [VIDEO] alone for avatar mode, got %v", avatarCfg.ResponseModalities)
+	avatarCfg, err := BuildConnectConfig(avatarSpec)
+	if err != nil {
+		t.Fatalf("BuildConnectConfig(704x1280 avatar) returned error: %v", err)
+	}
+	if diff := cmp.Diff([]genai.Modality{genai.ModalityVideo}, avatarCfg.ResponseModalities); diff != "" {
+		t.Errorf("BuildConnectConfig(ModeAvatar).ResponseModalities diff (-want +got):\n%s", diff)
 	}
 	if avatarCfg.AvatarConfig == nil || avatarCfg.AvatarConfig.CustomizedAvatar == nil {
-		t.Fatal("expected CustomizedAvatar populated")
+		t.Fatalf("BuildConnectConfig(704x1280 avatar).AvatarConfig = %+v, want non-nil CustomizedAvatar", avatarCfg.AvatarConfig)
 	}
-	if *avatarCfg.AvatarConfig.VideoBitrateBps != 1_000_000 {
-		t.Fatal("expected VideoBitrateBps propagated")
+	if got := *avatarCfg.AvatarConfig.VideoBitrateBps; got != 1_000_000 {
+		t.Errorf("BuildConnectConfig(VideoBitrateBps=1000000) = %d, want 1000000", got)
 	}
 
-	// 4. Square custom avatar fails pre-dial
 	squareURL := encodePNGDataURL(t, 1024, 1024)
 	if _, err := BuildConnectConfig(SessionSpec{Mode: ModeAvatar, AvatarData: squareURL}); err == nil {
-		t.Fatal("expected square 1024x1024 custom avatar to fail BuildConnectConfig")
+		t.Errorf("BuildConnectConfig(square 1024x1024) = nil error, want non-nil error")
 	}
 }
 
@@ -134,7 +111,6 @@ func TestDeclarationsFromPageTools_WebMCPStringAndObjectSchemas(t *testing.T) {
 		{
 			Name:        "draw_node",
 			Description: "Draws a node on the canvas.",
-			// Chrome WebMCP stringified inputSchema form:
 			InputSchema: json.RawMessage(`"{\"type\":\"object\",\"properties\":{\"label\":{\"type\":\"string\"}}}"`),
 		},
 		{
@@ -148,10 +124,10 @@ func TestDeclarationsFromPageTools_WebMCPStringAndObjectSchemas(t *testing.T) {
 		AllowedNames: map[string]bool{"draw_node": true},
 	})
 	if len(decls) != 1 || decls[0].Name != "draw_node" || decls[0].ParametersJsonSchema == nil {
-		t.Fatalf("unexpected converted declarations: %+v", decls)
+		t.Errorf("DeclarationsFromPageTools(tools) decls = %+v, want [draw_node] with ParametersJsonSchema", decls)
 	}
 	if len(rejected) != 1 || !strings.Contains(rejected[0], "evil_tool") {
-		t.Fatalf("expected evil_tool in rejected list, got %v", rejected)
+		t.Errorf("DeclarationsFromPageTools(tools) rejected = %v, want [evil_tool: not on allowlist]", rejected)
 	}
 }
 
@@ -183,25 +159,23 @@ func TestNewFixedHandler_AudioAndAlerts(t *testing.T) {
 
 	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http"), nil)
 	if err != nil {
-		t.Fatalf("dial: %v", err)
+		t.Fatalf("websocket.Dial(%q) failed: %v", srv.URL, err)
 	}
 	defer func() { _ = conn.Close() }()
 
 	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	var info map[string]any
 	if err := conn.ReadJSON(&info); err != nil || info["type"] != "session_info" {
-		t.Fatalf("expected session_info frame, got %+v (err=%v)", info, err)
+		t.Fatalf("NewFixedHandler(ModeAudio) first frame = %+v (err=%v), want session_info", info, err)
 	}
 
-	// Trigger SetupComplete so greeting + queued AlertBus item flush in order.
 	fake.recvCh <- &genai.LiveServerMessage{SetupComplete: &genai.LiveServerSetupComplete{}}
 
 	var alertFrame map[string]any
 	if err := conn.ReadJSON(&alertFrame); err != nil || alertFrame["type"] != "proactive_alert" || alertFrame["id"] != "a-1" {
-		t.Fatalf("expected proactive_alert frame after SetupComplete, got %+v (err=%v)", alertFrame, err)
+		t.Fatalf("NewFixedHandler(AlertBus) post-SetupComplete frame = %+v (err=%v), want proactive_alert id=a-1", alertFrame, err)
 	}
 
-	// Emit PCM audio chunk from upstream -> expect media_config then binary frame.
 	fake.recvCh <- &genai.LiveServerMessage{
 		ServerContent: &genai.LiveServerContent{
 			ModelTurn: &genai.Content{
@@ -214,11 +188,11 @@ func TestNewFixedHandler_AudioAndAlerts(t *testing.T) {
 
 	var mediaCfg map[string]any
 	if err := conn.ReadJSON(&mediaCfg); err != nil || mediaCfg["type"] != "media_config" {
-		t.Fatalf("expected media_config, got %+v (err=%v)", mediaCfg, err)
+		t.Fatalf("NewFixedHandler(PCM) announcement = %+v (err=%v), want media_config", mediaCfg, err)
 	}
 	msgType, pcm, err := conn.ReadMessage()
 	if err != nil || msgType != websocket.BinaryMessage || len(pcm) != 4 {
-		t.Fatalf("expected 4-byte binary PCM frame, got type=%d len=%d err=%v", msgType, len(pcm), err)
+		t.Errorf("NewFixedHandler(PCM) binary frame = (type=%d, len=%d, err=%v), want (BinaryMessage, 4, nil)", msgType, len(pcm), err)
 	}
 }
 
@@ -233,7 +207,7 @@ func TestNewDynamicHandler_PreDialValidationAndAllowlists(t *testing.T) {
 
 		conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http"), nil)
 		if err != nil {
-			t.Fatalf("dial: %v", err)
+			t.Fatalf("websocket.Dial(%q) failed: %v", srv.URL, err)
 		}
 		defer func() { _ = conn.Close() }()
 
@@ -247,10 +221,10 @@ func TestNewDynamicHandler_PreDialValidationAndAllowlists(t *testing.T) {
 		_, _, closeErr := conn.ReadMessage()
 		var ce *websocket.CloseError
 		if !errors.As(closeErr, &ce) || ce.Code != websocket.CloseInvalidFramePayloadData {
-			t.Fatalf("expected 1007 invalid payload close, got %v", closeErr)
+			t.Errorf("NewDynamicHandler(invalid avatar) closeErr = %v, want CloseInvalidFramePayloadData (1007)", closeErr)
 		}
 		if fc.connectHits != 0 {
-			t.Fatalf("expected 0 upstream dial attempts on invalid avatar, got %d", fc.connectHits)
+			t.Errorf("NewDynamicHandler(invalid avatar) Connector.Connect calls = %d, want 0", fc.connectHits)
 		}
 	})
 
@@ -267,7 +241,7 @@ func TestNewDynamicHandler_PreDialValidationAndAllowlists(t *testing.T) {
 
 		conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http"), nil)
 		if err != nil {
-			t.Fatalf("dial: %v", err)
+			t.Fatalf("websocket.Dial(%q) failed: %v", srv.URL, err)
 		}
 		defer func() { _ = conn.Close() }()
 
@@ -283,14 +257,37 @@ func TestNewDynamicHandler_PreDialValidationAndAllowlists(t *testing.T) {
 		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		var info map[string]any
 		if err := conn.ReadJSON(&info); err != nil || info["model"] != DefaultModel {
-			t.Fatalf("expected fallback to %s, got %+v (err=%v)", DefaultModel, info, err)
+			t.Fatalf("NewDynamicHandler(unapproved model) session_info = %+v (err=%v), want model=%q", info, err, DefaultModel)
 		}
 
 		fc.mu.Lock()
 		dialedCfg := fc.lastCfg
 		fc.mu.Unlock()
 		if dialedCfg == nil || len(dialedCfg.Tools) != 1 || len(dialedCfg.Tools[0].FunctionDeclarations) != 1 {
-			t.Fatalf("expected 1 page tool declaration wired into LiveConnectConfig, got %+v", dialedCfg)
+			t.Errorf("NewDynamicHandler(AllowPageTools) LiveConnectConfig.Tools = %+v, want 1 FunctionDeclaration", dialedCfg)
 		}
 	})
+}
+
+type fakeConnector struct {
+	mu          sync.Mutex
+	session     *fakeLiveSession
+	connectErr  error
+	lastModel   string
+	lastLoc     string
+	lastCfg     *genai.LiveConnectConfig
+	connectHits int
+}
+
+func (fc *fakeConnector) Connect(_ context.Context, model, location string, cfg *genai.LiveConnectConfig) (Session, error) {
+	fc.mu.Lock()
+	defer fc.mu.Unlock()
+	fc.connectHits++
+	fc.lastModel = model
+	fc.lastLoc = location
+	fc.lastCfg = cfg
+	if fc.connectErr != nil {
+		return nil, fc.connectErr
+	}
+	return fc.session, nil
 }

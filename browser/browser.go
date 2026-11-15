@@ -31,11 +31,6 @@ var bundleJS []byte
 
 var bundleETag = computeETag(bundleJS)
 
-func computeETag(b []byte) string {
-	sum := sha256.Sum256(b)
-	return `"` + hex.EncodeToString(sum[:12]) + `"`
-}
-
 // JS returns a copy of the embedded @ghchinoy/livebridge ES module bundle.
 func JS() []byte {
 	out := make([]byte, len(bundleJS))
@@ -78,4 +73,9 @@ func Handler() http.Handler {
 		}
 		_, _ = w.Write(bundleJS)
 	})
+}
+
+func computeETag(b []byte) string {
+	sum := sha256.Sum256(b)
+	return `"` + hex.EncodeToString(sum[:12]) + `"`
 }
