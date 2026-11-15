@@ -36,8 +36,8 @@ Before writing code, pick one option from each of the four axes below. Every com
 | Entry Point | Toolchain Needed | Best For |
 | :--- | :--- | :--- |
 | **`github.com/ghchinoy/livebridge/browser`** (`browser.Handler()`) | **None** (`go build` produces a single self-contained binary) | CLI companions, internal tools, Go-embedded HTML apps, portable agent skills (`<script type="module">import { LiveSession } from '/livebridge.js'</script>`). |
-| **`@ghchinoy/livebridge`** | Vite / Rollup / esbuild / Webpack (`0` runtime dependencies) | Vanilla TypeScript, React, Vue, or Svelte apps subscribing to `LiveSession` (`EventTarget`) or composing `LiveSocketClient`, `PcmMic`, `PcmPlayer`, `Fmp4Player`, and `VisionCapture` directly. |
-| **`@ghchinoy/livebridge/lit`** | Vite + `lit ^3.0.0` | Lit 3 Web Component apps using `LiveSessionController` (or granular `ReactiveController`s) to trigger `host.requestUpdate()` automatically. |
+| **`@ghchinoy/livebridge`** | Vite / Rollup / esbuild / Webpack (`0` runtime dependencies) | Vanilla TypeScript, React, Vue, or Svelte apps subscribing to `LiveSession` (`EventTarget`) or composing `LiveSocketClient`, `PcmMic`, `PcmPlayer`, `Fmp4Player`, and `VisionCapture` directly. See [`ghchinoy/livebridge-examples`](https://github.com/ghchinoy/livebridge-examples) for complete React 19 (`bilingual-coach`) and Vanilla TS (`whiteboard-architect`) reference apps. |
+| **`@ghchinoy/livebridge/lit`** | Vite + `lit ^3.0.0` | Lit 3 Web Component apps using `LiveSessionController` (or granular `ReactiveController`s) to trigger `host.requestUpdate()` automatically. See [`04-ops-watchtower`](../examples/04-ops-watchtower/) and `visual-concierge` in [`ghchinoy/livebridge-examples`](https://github.com/ghchinoy/livebridge-examples). |
 
 ### C. Tool Execution Location
 

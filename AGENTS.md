@@ -23,8 +23,9 @@ bd close <id>
 - **Root TypeScript package (`@ghchinoy/livebridge`):**
   - Core entry (`ts/index.ts` -> `dist/index.js`) has **zero runtime dependencies**.
   - Optional Lit 3 subpath (`@ghchinoy/livebridge/lit`, `ts/lit/index.ts` -> `dist/lit/index.js`) provides `ReactiveController`s with `lit` as an optional peer dependency.
-- **Standalone examples (`examples/*`):**
-  - Linked locally via root `go.work` and npm `workspaces` so `examples/*/go.mod` never contain relative `replace` directives and never copy `livebridge` source files.
+- **Standalone examples (`examples/*`) & companion showcase (`../livebridge-examples`):**
+  - In-repo `examples/*` are minimal single-concept API recipes linked via root `go.work` and `file:../../..` so `examples/*/go.mod` never contain relative `replace` directives and never copy `livebridge` source files.
+  - Sibling repo `~/projects/livebridge-examples` (`https://github.com/ghchinoy/livebridge-examples`) hosts richer multi-framework external consumers (Lit 3, Vanilla TS, React 19, Zero-Node Go) against published Go/npm releases; run `make use-tarball && make verify` there before `npm publish` and `make use-npm && make verify` afterward.
 - **Logging & Security:**
   - Use `log/slog` in Go; never log prompt or transcript text (log rune/byte counts only).
   - Every exit path in `Bridge` must funnel through idempotent `Bridge.Shutdown`.

@@ -201,4 +201,4 @@ FormatAlert: func(a livebridge.Alert) (string, any) {
 }
 ```
 
-On the browser side, `LiveSession` automatically plays a warm procedural Web Audio cue via `ChimeSynth` and calls `PcmPlayer.deferPlayback(cueSeconds)` so spoken audio never overlaps the notification tone. See [`examples/04-ops-watchtower/`](../examples/04-ops-watchtower/).
+On the browser side, `LiveSession` automatically plays a warm procedural Web Audio cue via `ChimeSynth` and calls `PcmPlayer.deferPlayback(cueSeconds)` so spoken audio never overlaps the notification tone. See [`examples/04-ops-watchtower/`](../examples/04-ops-watchtower/) and the external showcase apps in [`ghchinoy/livebridge-examples`](https://github.com/ghchinoy/livebridge-examples).

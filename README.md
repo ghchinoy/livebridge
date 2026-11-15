@@ -1,6 +1,7 @@
 # livebridge
 
 [![Go 1.26+](https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go&logoColor=white)](go.mod)
+[![npm @ghchinoy/livebridge](https://img.shields.io/npm/v/@ghchinoy/livebridge?logo=npm&color=CB3837)](https://www.npmjs.com/package/@ghchinoy/livebridge)
 [![TypeScript](https://img.shields.io/badge/TypeScript-ESM%20%7C%200%20Deps-3178C6?logo=typescript&logoColor=white)](package.json)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
@@ -152,7 +153,11 @@ In [`examples/03-code-assistant`](examples/03-code-assistant/), replacing copy-p
 
 ## Stand-Alone Examples
 
-Every app under [`examples/`](examples/) is an independent Go module with **zero copied library files** (wired locally via [`go.work`](go.work)):
+Examples are split across two complementary repositories so core CI stays fast and zero-bloat while full multi-framework apps validate published Go and npm releases:
+
+### 1. In-Repo API Reference Recipes ([`examples/`](examples/))
+
+Minimal, single-concept modules wired into [`go.work`](go.work) and verified on every CI run:
 
 | Example | Ports | Stack & Capabilities Proven |
 | :--- | :--- | :--- |
@@ -160,6 +165,15 @@ Every app under [`examples/`](examples/) is an independent Go module with **zero
 | **[`02-avatar-desk`](examples/02-avatar-desk/)** | `:8082` / Vite `:5174` | `NewDynamicHandler` + Vite TS (`@ghchinoy/livebridge`); preset & custom `704x1280` / `1280x704` avatars (`prepareAvatarImage`), `Fmp4Player`, 1 FPS camera & screen `VisionCapture`. |
 | **[`03-code-assistant`](examples/03-code-assistant/)** | `:8083` | `FuncRegistry` (`list_directory`, `read_file`, `generate_diagram`) + `GoogleSearch` + `livebridge/browser`; voice or `?avatar=Kira` video mode. |
 | **[`04-ops-watchtower`](examples/04-ops-watchtower/)** | `:8084` / Vite `:5175` | Lit 3 (`@ghchinoy/livebridge/lit` `LiveSessionController`), `WebmcpToolHost` `<canvas>` tools (`SeeVisualResults`), `AlertBus` + `FormatUntrustedAlert` + `ChimeSynth`. |
+
+### 2. Companion Multi-Framework Showcase ([`ghchinoy/livebridge-examples`](https://github.com/ghchinoy/livebridge-examples))
+
+Full external applications consuming published `github.com/ghchinoy/livebridge` and [`@ghchinoy/livebridge`](https://www.npmjs.com/package/@ghchinoy/livebridge) releases (with zero `go.work` or `replace` directives):
+
+- **`visual-concierge` (Lit 3 + `/lit`):** Talking video avatar (`PRESET_AVATARS` + `prepareAvatarImage`), 1 FPS webcam/screen `VisionCapture`, and a live `upsert_checklist` drawer.
+- **`whiteboard-architect` (Vanilla TypeScript):** Shared `640x400` `<canvas>` combining freehand pointer drawing, WebMCP diagram tools (`SeeVisualResults`), and a 60 FPS `PcmPlayer.analyser` spectrum visualizer.
+- **`bilingual-coach` (React 19):** Idiomatic `useLiveSession` hook exercising multilingual `LanguageCode`, `AdaptationPhrases`, tunable VAD `SilenceDurationMs` pause patience, and live `score_turn` rubric cards.
+- **`pocket-briefing` (Zero-Node Go):** Single-binary CLI voice briefing desk (`livebridge/browser`) watching `./inbox/*.{md,txt}` and `POST /api/memo` webhooks via `AlertBus` + `ChimeSynth`.
 
 ---
 
