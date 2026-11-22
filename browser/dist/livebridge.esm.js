@@ -345,7 +345,7 @@ var m = class {
 				isTerminating: this.isTerminating,
 				hadErrorEvent: this.hadErrorEvent
 			});
-			t && this.options?.onWarning?.(t.message), this.cleanup(), this.options?.onStateChange?.(), this.notifyDisconnect();
+			this.cleanup(), t && this.options?.onWarning?.(t.message), this.options?.onStateChange?.(), this.notifyDisconnect();
 		};
 	}
 	sendPayload(e) {
@@ -390,8 +390,8 @@ var m = class {
 			type: "control",
 			action: "terminate"
 		})), this.terminateTimeoutId = setTimeout(() => {
-			this.terminateTimeoutId = null, this.cleanup(), this.options?.onStateChange?.(), this.notifyDisconnect();
-		}, e)) : (this.cleanup(), this.options?.onStateChange?.(), this.notifyDisconnect());
+			this.terminateTimeoutId = null, this.status = "Disconnected", this.cleanup(), this.options?.onStateChange?.(), this.notifyDisconnect();
+		}, e)) : (this.status = "Disconnected", this.cleanup(), this.options?.onStateChange?.(), this.notifyDisconnect());
 	}
 	requestGracefulTermination() {
 		this.terminate();
@@ -400,7 +400,7 @@ var m = class {
 		this.status = "Disconnected", this.cleanup(), this.options?.onStateChange?.(), this.notifyDisconnect();
 	}
 	cleanup() {
-		if (this.terminateTimeoutId !== null && (clearTimeout(this.terminateTimeoutId), this.terminateTimeoutId = null), this.options?.onBeforeTerminate?.(), this.ws) {
+		if (this.terminateTimeoutId !== null && (clearTimeout(this.terminateTimeoutId), this.terminateTimeoutId = null), this.isTerminating = !1, this.upstreamReady = !1, this.options?.onBeforeTerminate?.(), this.ws) {
 			let e = this.ws;
 			this.ws = null, (e.readyState === WebSocket.OPEN || e.readyState === WebSocket.CONNECTING) && e.close();
 		}
@@ -1068,5 +1068,5 @@ function z(e) {
 	}
 }
 // ts/index.ts
-var B = "0.1.1";
+var B = "0.1.2";
 export { t as AVATAR_LANDSCAPE, e as AVATAR_PORTRAIT, o as CHIME_PRESETS, c as ChimeSynth, l as Fmp4Player, S as LiveSession, m as LiveSocketClient, T as PREBUILT_VOICES, w as PRESET_AVATARS, E as PRESET_AVATAR_VOICES, y as PcmMic, b as PcmPlayer, d as TranscriptAssembler, B as VERSION, x as VisionCapture, N as WebmcpCallEvent, M as WebmcpToolError, R as WebmcpToolHost, F as annotationsFor, I as asObject, p as base64ToArrayBuffer, P as canonicalJSON, v as computeInt16Rms, h as createPcmCaptureContext, k as defaultVoiceForAvatar, f as describeCloseEvent, g as int16ArrayToLittleEndianBytes, O as isPrebuiltVoice, D as isPresetAvatar, j as nativeModelContext, s as normalizeChimePreset, u as parseToolCallItem, n as pickAvatarTarget, r as prepareAvatarImage, A as presetAvatarImageUrl, i as resizeAndCropImage, a as resizeToMaxDimension, _ as uint8ArrayToBase64 };

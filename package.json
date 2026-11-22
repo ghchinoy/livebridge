@@ -1,6 +1,6 @@
 {
   "name": "@ghchinoy/livebridge",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Zero-dependency browser & Lit client kit for real-time Gemini Live voice, talking video avatars, 1 FPS vision, WebMCP page tools, and proactive alerts — paired with the Go livebridge switchboard.",
   "license": "Apache-2.0",
   "repository": {

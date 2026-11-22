@@ -13,13 +13,14 @@
 // limitations under the License.
 
 import { LitElement, html } from 'lit';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   AVATAR_LANDSCAPE,
   AVATAR_PORTRAIT,
   CHIME_PRESETS,
   ChimeSynth,
   LiveSession,
+  LiveSocketClient,
   PRESET_AVATARS,
   TranscriptAssembler,
   WebmcpToolHost,
@@ -428,6 +429,260 @@ describe('LiveSession & @ghchinoy/livebridge/lit', () => {
         type: 'control',
         action: 'terminate',
       });
+
+      el.remove();
+    } finally {
+      globalThis.WebSocket = RealWS;
+    }
+  });
+});
+
+describe('LiveSocketClient termination lifecycle', () => {
+  it('resets isTerminating and status on ws.onclose while suppressing abnormal-close warnings', () => {
+    const RealWS = globalThis.WebSocket;
+    MockWebSocket.instances = [];
+    (globalThis as unknown as { WebSocket: typeof MockWebSocket }).WebSocket =
+      MockWebSocket;
+
+    try {
+      for (const closeCase of [
+        { code: 1000, reason: 'Session terminated', expectWarning: false },
+        { code: 1006, reason: '', expectWarning: false },
+        { code: 1007, reason: 'Bad config', expectWarning: true },
+      ]) {
+        const warnings: string[] = [];
+        const observedOnDisconnect: Array<{
+          isTerminating: boolean;
+          isConnected: boolean;
+          status: string;
+        }> = [];
+        let warningObservedTerminating: boolean | null = null;
+
+        const client = new LiveSocketClient();
+        client.connect({
+          url: 'ws://localhost/ws',
+          onWarning: (msg) => {
+            warnings.push(msg);
+            warningObservedTerminating = client.isTerminating;
+          },
+          onDisconnected: () => {
+            observedOnDisconnect.push({
+              isTerminating: client.isTerminating,
+              isConnected: client.isConnected,
+              status: client.status,
+            });
+          },
+        });
+
+        const ws = MockWebSocket.instances[MockWebSocket.instances.length - 1];
+        ws.open();
+
+        client.terminate();
+        expect(client.isTerminating).toBe(true);
+        expect(client.status).toBe('Disconnecting...');
+
+        ws.close(closeCase.code, closeCase.reason);
+
+        expect(client.isTerminating).toBe(false);
+        expect(client.isConnected).toBe(false);
+        expect(client.status).toBe('Disconnected');
+        expect(observedOnDisconnect).toEqual([
+          {
+            isTerminating: false,
+            isConnected: false,
+            status: 'Disconnected',
+          },
+        ]);
+        if (closeCase.expectWarning) {
+          expect(warnings).toEqual(['Bad config']);
+          expect(warningObservedTerminating).toBe(false);
+        } else {
+          expect(warnings).toEqual([]);
+        }
+      }
+    } finally {
+      globalThis.WebSocket = RealWS;
+    }
+  });
+
+  it('resets isTerminating and status when terminate() fallback timeout fires', () => {
+    const RealWS = globalThis.WebSocket;
+    MockWebSocket.instances = [];
+    (globalThis as unknown as { WebSocket: typeof MockWebSocket }).WebSocket =
+      MockWebSocket;
+    vi.useFakeTimers();
+
+    try {
+      let disconnectCount = 0;
+      let stateOnDisconnect: { isTerminating: boolean; status: string } | null =
+        null;
+
+      const client = new LiveSocketClient();
+      client.connect({
+        url: 'ws://localhost/ws',
+        terminateTimeoutMs: 50,
+        onDisconnected: () => {
+          disconnectCount++;
+          stateOnDisconnect = {
+            isTerminating: client.isTerminating,
+            status: client.status,
+          };
+        },
+      });
+
+      const ws = MockWebSocket.instances[0];
+      ws.open();
+
+      client.terminate();
+      expect(client.isTerminating).toBe(true);
+      expect(client.status).toBe('Disconnecting...');
+
+      vi.advanceTimersByTime(50);
+
+      expect(client.isTerminating).toBe(false);
+      expect(client.isConnected).toBe(false);
+      expect(client.status).toBe('Disconnected');
+      expect(ws.readyState).toBe(MockWebSocket.CLOSED);
+      expect(disconnectCount).toBe(1);
+      expect(stateOnDisconnect).toEqual({
+        isTerminating: false,
+        status: 'Disconnected',
+      });
+    } finally {
+      vi.useRealTimers();
+      globalThis.WebSocket = RealWS;
+    }
+  });
+
+  it('resets isTerminating and cancels fallback timer when disconnect() follows terminate()', () => {
+    const RealWS = globalThis.WebSocket;
+    MockWebSocket.instances = [];
+    (globalThis as unknown as { WebSocket: typeof MockWebSocket }).WebSocket =
+      MockWebSocket;
+    vi.useFakeTimers();
+
+    try {
+      let disconnectCount = 0;
+      const client = new LiveSocketClient();
+      client.connect({
+        url: 'ws://localhost/ws',
+        terminateTimeoutMs: 50,
+        onDisconnected: () => {
+          disconnectCount++;
+        },
+      });
+
+      const ws = MockWebSocket.instances[0];
+      ws.open();
+
+      client.terminate();
+      expect(client.isTerminating).toBe(true);
+
+      client.disconnect();
+      expect(client.isTerminating).toBe(false);
+      expect(client.status).toBe('Disconnected');
+      expect(disconnectCount).toBe(1);
+
+      vi.advanceTimersByTime(100);
+      expect(disconnectCount).toBe(1);
+    } finally {
+      vi.useRealTimers();
+      globalThis.WebSocket = RealWS;
+    }
+  });
+
+  it('does not stick isTerminating when terminate() is called while idle, connecting, or closed', () => {
+    const RealWS = globalThis.WebSocket;
+    MockWebSocket.instances = [];
+    (globalThis as unknown as { WebSocket: typeof MockWebSocket }).WebSocket =
+      MockWebSocket;
+
+    try {
+      const idle = new LiveSocketClient();
+      idle.terminate();
+      expect(idle.isTerminating).toBe(false);
+      expect(idle.status).toBe('Disconnected');
+
+      const client = new LiveSocketClient();
+      client.connect({ url: 'ws://localhost/ws' });
+      const ws = MockWebSocket.instances[0];
+      expect(ws.readyState).toBe(MockWebSocket.CONNECTING);
+
+      client.terminate();
+      expect(client.isTerminating).toBe(false);
+      expect(client.status).toBe('Disconnected');
+      expect(ws.readyState).toBe(MockWebSocket.CLOSED);
+
+      // Calling terminate() again when already closed stays clean.
+      client.terminate();
+      expect(client.isTerminating).toBe(false);
+      expect(client.status).toBe('Disconnected');
+    } finally {
+      globalThis.WebSocket = RealWS;
+    }
+  });
+
+  it('re-enables Lit LiveSessionController controls after graceful terminate()', async () => {
+    const RealWS = globalThis.WebSocket;
+    MockWebSocket.instances = [];
+    (globalThis as unknown as { WebSocket: typeof MockWebSocket }).WebSocket =
+      MockWebSocket;
+
+    try {
+      class TestTerminateView extends LitElement {
+        readonly live = new LiveSessionController(this, {
+          mode: 'audio',
+          chimePreset: 'off',
+        });
+
+        protected override render() {
+          return html`<button
+              id="start"
+              ?disabled=${this.live.isConnected || this.live.isTerminating}
+            >
+              ${this.live.isTerminating ? 'Ending...' : 'Start'}
+            </button>
+            <span id="status">${this.live.status}</span>`;
+        }
+      }
+      if (!customElements.get('test-terminate-view')) {
+        customElements.define('test-terminate-view', TestTerminateView);
+      }
+
+      const el = document.createElement(
+        'test-terminate-view',
+      ) as TestTerminateView;
+      document.body.appendChild(el);
+      await el.updateComplete;
+
+      await el.live.connect({
+        url: 'ws://localhost/ws',
+        autoStartMic: false,
+      });
+      const ws = MockWebSocket.instances[0];
+      ws.open();
+      await el.updateComplete;
+
+      const startBtn = () =>
+        el.shadowRoot?.querySelector('#start') as HTMLButtonElement;
+      const statusText = () =>
+        el.shadowRoot?.querySelector('#status')?.textContent;
+
+      expect(startBtn().disabled).toBe(true);
+      expect(statusText()).toBe('Connected');
+
+      el.live.terminate();
+      await el.updateComplete;
+      expect(el.live.isTerminating).toBe(true);
+      expect(startBtn().disabled).toBe(true);
+      expect(statusText()).toBe('Disconnecting...');
+
+      ws.close(1000, 'Session terminated');
+      await el.updateComplete;
+      expect(el.live.isTerminating).toBe(false);
+      expect(el.live.isConnected).toBe(false);
+      expect(startBtn().disabled).toBe(false);
+      expect(statusText()).toBe('Disconnected');
 
       el.remove();
     } finally {

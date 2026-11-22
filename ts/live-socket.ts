@@ -198,10 +198,10 @@ export class LiveSocketClient {
         isTerminating: this.isTerminating,
         hadErrorEvent: this.hadErrorEvent,
       });
+      this.cleanup();
       if (diag) {
         this.options?.onWarning?.(diag.message);
       }
-      this.cleanup();
       this.options?.onStateChange?.();
       this.notifyDisconnect();
     };
@@ -275,11 +275,13 @@ export class LiveSocketClient {
       this.ws.send(JSON.stringify({ type: 'control', action: 'terminate' }));
       this.terminateTimeoutId = setTimeout(() => {
         this.terminateTimeoutId = null;
+        this.status = 'Disconnected';
         this.cleanup();
         this.options?.onStateChange?.();
         this.notifyDisconnect();
       }, timeoutMs);
     } else {
+      this.status = 'Disconnected';
       this.cleanup();
       this.options?.onStateChange?.();
       this.notifyDisconnect();
@@ -304,6 +306,8 @@ export class LiveSocketClient {
       clearTimeout(this.terminateTimeoutId);
       this.terminateTimeoutId = null;
     }
+    this.isTerminating = false;
+    this.upstreamReady = false;
     this.options?.onBeforeTerminate?.();
     if (this.ws) {
       const ws = this.ws;
