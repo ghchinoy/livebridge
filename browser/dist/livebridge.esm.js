@@ -1068,5 +1068,5 @@ function z(e) {
 	}
 }
 // ts/index.ts
-var B = "0.1.2";
+var B = "0.1.3";
 export { t as AVATAR_LANDSCAPE, e as AVATAR_PORTRAIT, o as CHIME_PRESETS, c as ChimeSynth, l as Fmp4Player, S as LiveSession, m as LiveSocketClient, T as PREBUILT_VOICES, w as PRESET_AVATARS, E as PRESET_AVATAR_VOICES, y as PcmMic, b as PcmPlayer, d as TranscriptAssembler, B as VERSION, x as VisionCapture, N as WebmcpCallEvent, M as WebmcpToolError, R as WebmcpToolHost, F as annotationsFor, I as asObject, p as base64ToArrayBuffer, P as canonicalJSON, v as computeInt16Rms, h as createPcmCaptureContext, k as defaultVoiceForAvatar, f as describeCloseEvent, g as int16ArrayToLittleEndianBytes, O as isPrebuiltVoice, D as isPresetAvatar, j as nativeModelContext, s as normalizeChimePreset, u as parseToolCallItem, n as pickAvatarTarget, r as prepareAvatarImage, A as presetAvatarImageUrl, i as resizeAndCropImage, a as resizeToMaxDimension, _ as uint8ArrayToBase64 };

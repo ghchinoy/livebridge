@@ -4,6 +4,16 @@ All notable changes to `livebridge` (`github.com/ghchinoy/livebridge` and `@ghch
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and both the Go module and TypeScript package follow lockstep [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-11-22
+
+### Security & Dependencies
+
+- **Go Stdlib Floor & Transitive Vulnerability Remediation (`go.mod`, `go.work`):**
+  - Raised minimum `go` directive from `1.26.1` to `1.26.10` so `GOTOOLCHAIN=auto` and CI builds receive patched Go 1.26 standard-library security fixes without requiring Go 1.27.
+  - Upgraded `google.golang.org/genai` (`v1.77.0` → `v1.79.1`), `github.com/google/go-cmp` (`v0.6.0` → `v0.7.0`), and transitive networking/crypto modules (`golang.org/x/net` → `v0.63.0`, `google.golang.org/grpc` → `v1.85.0`, `golang.org/x/text` → `v0.44.0`, `golang.org/x/crypto` → `v0.59.0`, `cloud.google.com/go/auth` → `v0.24.4`), eliminating all 10 reachable `govulncheck` advisories (`GO-2026-4918` through `GO-2026-6617`).
+- **CI, Node Floor & Test Tooling (`.github/workflows/ci.yml`, `Makefile`, `package.json`):**
+  - Pinned CI Node.js to `22.23.4`, declared `engines.node >= 22.23.4` in example frontends, added `make vulncheck`, and bumped `vitest` / `@vitest/browser-playwright` to `^5.1.1`.
+
 ## [0.1.2] - 2026-11-22
 
 ### Fixed
@@ -43,6 +53,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Stand-Alone Validation Examples & Documentation:**
   - `01-minimal-voice`, `02-avatar-desk`, `03-code-assistant`, and `04-ops-watchtower` plus full Diátaxis documentation (`README.md`, `docs/developers-guide.md`, `docs/recipes.md`, `docs/wire-protocol.md`).
 
+[0.1.3]: https://github.com/ghchinoy/livebridge/releases/tag/v0.1.3
 [0.1.2]: https://github.com/ghchinoy/livebridge/releases/tag/v0.1.2
 [0.1.1]: https://github.com/ghchinoy/livebridge/releases/tag/v0.1.1
 [0.1.0]: https://github.com/ghchinoy/livebridge/releases/tag/v0.1.0

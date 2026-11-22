@@ -18,4 +18,4 @@ package livebridge
 // (github.com/ghchinoy/livebridge), the embedded browser bundle
 // (github.com/ghchinoy/livebridge/browser), and the @ghchinoy/livebridge npm
 // package.
-const Version = "0.1.2"
+const Version = "0.1.3"

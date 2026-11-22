@@ -34,7 +34,8 @@ func TestLiveSmoke(t *testing.T) {
 
 	clients, err := NewClientPoolFromEnv()
 	if err != nil {
-		t.Fatalf("NewClientPoolFromEnv() failed: %v", err)
+		t.Fatalf("NewClientPoolFromEnv(project=%q, apiKeySet=%t) failed: %v",
+			os.Getenv("GOOGLE_CLOUD_PROJECT"), os.Getenv("GEMINI_API_KEY") != "", err)
 	}
 	model := os.Getenv("GEMINI_LIVE_MODEL")
 	if model == "" {

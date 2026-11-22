@@ -16,7 +16,7 @@
 # (@ghchinoy/livebridge) libraries + standalone examples for Gemini Live.
 
 .PHONY: help build bundle check-bundle check-version diagrams lint license license-check \
-	test test-go test-ts test-examples test-live
+	test test-go test-ts test-examples test-live vulncheck
 
 LUMINOUS_THEME ?= ../graphviz-style/theme/luminous.gvpr
 DOT_SOURCES := $(wildcard docs/assets/*.dot)
@@ -48,6 +48,7 @@ help:
 	@echo "  make test-ts       - Vitest headless Chromium tests"
 	@echo "  make test-examples - Go race tests + Vite builds across examples/*"
 	@echo "  make test-live     - Live API smoke test (ModeAudio + ModeAvatar; uses quota)"
+	@echo "  make vulncheck     - Run govulncheck call-graph vulnerability scan"
 
 bundle:
 	@npm run build
@@ -113,3 +114,6 @@ test-examples:
 test-live:
 	@GEMINI_LIVE_SMOKE=1 GOOGLE_CLOUD_PROJECT="$${GOOGLE_CLOUD_PROJECT:-$$(gcloud config get project 2>/dev/null)}" \
 		go test -run 'TestLiveSmoke' -v -count=1 .
+
+vulncheck:
+	@GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@latest . ./browser/...
