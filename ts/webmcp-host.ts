@@ -14,10 +14,16 @@
 
 export interface WebmcpRegisteredTool {
   name: string;
+  title?: string;
   description: string;
-  inputSchema?: Record<string, unknown> | string;
+  inputSchema?: Record<string, unknown> | string | null;
+  outputSchema?: Record<string, unknown> | string | null;
+  /** WebMCP `Tool.source` (`WindowProxy?`; `null` if owner document is no longer fully active). */
+  source?: Window | null;
+  /** Legacy pre-PR #348 `RegisteredTool.window`. */
   window?: Window;
   origin?: string;
+  annotations?: WebmcpAnnotations | null;
 }
 
 export interface WebmcpAnnotations {
@@ -179,9 +185,18 @@ export function asObject(value: unknown): Record<string, unknown> | null {
 
 const PARSE_ERROR = /parse input arguments|not of type 'object'/i;
 
+function isFromCurrentWindow(
+  tool: WebmcpRegisteredTool,
+  currentWindow: Window | undefined,
+): boolean {
+  if (tool.source !== undefined) return tool.source === currentWindow;
+  if (tool.window !== undefined) return tool.window === currentWindow;
+  return true;
+}
+
 /**
  * Framework-agnostic WebMCP (`document.modelContext`) and fallback tool host:
- * - Verifies tool ownership (name, description, canonical schema, and window)
+ * - Verifies tool ownership (name, description, canonical schema, and source/window)
  *   before advertising or executing tools so third-party injected scripts
  *   cannot hijack model tool calls.
  * - Negotiates both Chrome 154 JSON-string arguments and CG spec object
@@ -292,11 +307,12 @@ export class WebmcpToolHost<
   async list(): Promise<WebmcpToolInfo[]> {
     if (this.mc) {
       const currentWindow = typeof window !== 'undefined' ? window : undefined;
-      const tools = (await this.mc.getTools()).filter(
-        (t) => !t.window || t.window === currentWindow,
+      const tools = (await this.mc.getTools()).filter((t) =>
+        isFromCurrentWindow(t, currentWindow),
       );
       if (tools.length) {
-        this.diagnostics.schemaType = typeof tools[0].inputSchema;
+        this.diagnostics.schemaType =
+          tools[0].inputSchema === null ? 'null' : typeof tools[0].inputSchema;
       }
       const out: WebmcpToolInfo[] = [];
       this.diagnostics.dropped = [];
@@ -305,7 +321,11 @@ export class WebmcpToolHost<
           name: t.name,
           description: t.description,
         };
-        if (t.inputSchema !== undefined && t.inputSchema !== '') {
+        if (
+          t.inputSchema !== undefined &&
+          t.inputSchema !== null &&
+          t.inputSchema !== ''
+        ) {
           const schema = asObject(t.inputSchema);
           if (!schema) {
             this.diagnostics.dropped.push(`${t.name}: unparseable inputSchema`);
@@ -354,7 +374,7 @@ export class WebmcpToolHost<
         const currentWindow =
           typeof window !== 'undefined' ? window : undefined;
         const tool = (await this.mc.getTools()).find(
-          (t) => t.name === name && (!t.window || t.window === currentWindow),
+          (t) => t.name === name && isFromCurrentWindow(t, currentWindow),
         );
         if (!tool) {
           return {
@@ -362,7 +382,9 @@ export class WebmcpToolHost<
           };
         }
         const schema =
-          tool.inputSchema === undefined || tool.inputSchema === ''
+          tool.inputSchema === undefined ||
+          tool.inputSchema === null ||
+          tool.inputSchema === ''
             ? undefined
             : (asObject(tool.inputSchema) ?? undefined);
         if (!this.isOurs(tool, schema)) {

@@ -912,7 +912,11 @@ function I(e) {
 	}
 	return t && typeof t == "object" && !Array.isArray(t) ? t : null;
 }
-var L = /parse input arguments|not of type 'object'/i, R = class extends EventTarget {
+var L = /parse input arguments|not of type 'object'/i;
+function R(e, t) {
+	return e.source === void 0 ? e.window === void 0 || e.window === t : e.source === t;
+}
+var z = class extends EventTarget {
 	constructor(e = (e) => ({ signal: e }), t = j()) {
 		super(), this.running = /* @__PURE__ */ new Set(), this.externalCalls = 0, this.diagnostics = {
 			schemaType: "",
@@ -954,8 +958,8 @@ var L = /parse input arguments|not of type 'object'/i, R = class extends EventTa
 	}
 	async list() {
 		if (this.mc) {
-			let e = typeof window < "u" ? window : void 0, t = (await this.mc.getTools()).filter((t) => !t.window || t.window === e);
-			t.length && (this.diagnostics.schemaType = typeof t[0].inputSchema);
+			let e = typeof window < "u" ? window : void 0, t = (await this.mc.getTools()).filter((t) => R(t, e));
+			t.length && (this.diagnostics.schemaType = t[0].inputSchema === null ? "null" : typeof t[0].inputSchema);
 			let n = [];
 			this.diagnostics.dropped = [];
 			for (let e of t) {
@@ -963,7 +967,7 @@ var L = /parse input arguments|not of type 'object'/i, R = class extends EventTa
 					name: e.name,
 					description: e.description
 				};
-				if (e.inputSchema !== void 0 && e.inputSchema !== "") {
+				if (e.inputSchema !== void 0 && e.inputSchema !== null && e.inputSchema !== "") {
 					let n = I(e.inputSchema);
 					if (!n) {
 						this.diagnostics.dropped.push(`${e.name}: unparseable inputSchema`);
@@ -988,16 +992,16 @@ var L = /parse input arguments|not of type 'object'/i, R = class extends EventTa
 		let i = { caller: r };
 		try {
 			if (this.mc) {
-				let r = typeof window < "u" ? window : void 0, a = (await this.mc.getTools()).find((t) => t.name === e && (!t.window || t.window === r));
+				let r = typeof window < "u" ? window : void 0, a = (await this.mc.getTools()).find((t) => t.name === e && R(t, r));
 				if (!a) return { result: { error: `Tool ${e} is not available right now.` } };
-				let o = a.inputSchema === void 0 || a.inputSchema === "" ? void 0 : I(a.inputSchema) ?? void 0;
+				let o = a.inputSchema === void 0 || a.inputSchema === null || a.inputSchema === "" ? void 0 : I(a.inputSchema) ?? void 0;
 				if (!this.isOurs(a, o)) return { result: { error: `Tool ${e} on this page was not registered by this app; refusing to run it.` } };
 				this.lastImageByTool.delete(e);
 				let s = this.pendingOwn.get(e) ?? [];
 				s.push(i), this.pendingOwn.set(e, s);
 				let c = await this.executeViaModelContext(a, t, n), l = this.lastImageByTool.get(e);
 				return this.lastImageByTool.delete(e), {
-					result: z(c),
+					result: B(c),
 					imageDataUrl: l
 				};
 			}
@@ -1056,7 +1060,7 @@ var L = /parse input arguments|not of type 'object'/i, R = class extends EventTa
 		};
 	}
 };
-function z(e) {
+function B(e) {
 	if (e == null || e === "") return {};
 	if (typeof e == "object") return Array.isArray(e) ? { result: e } : e;
 	if (typeof e != "string") return { result: e };
@@ -1068,5 +1072,5 @@ function z(e) {
 	}
 }
 // ts/index.ts
-var B = "0.1.3";
-export { t as AVATAR_LANDSCAPE, e as AVATAR_PORTRAIT, o as CHIME_PRESETS, c as ChimeSynth, l as Fmp4Player, S as LiveSession, m as LiveSocketClient, T as PREBUILT_VOICES, w as PRESET_AVATARS, E as PRESET_AVATAR_VOICES, y as PcmMic, b as PcmPlayer, d as TranscriptAssembler, B as VERSION, x as VisionCapture, N as WebmcpCallEvent, M as WebmcpToolError, R as WebmcpToolHost, F as annotationsFor, I as asObject, p as base64ToArrayBuffer, P as canonicalJSON, v as computeInt16Rms, h as createPcmCaptureContext, k as defaultVoiceForAvatar, f as describeCloseEvent, g as int16ArrayToLittleEndianBytes, O as isPrebuiltVoice, D as isPresetAvatar, j as nativeModelContext, s as normalizeChimePreset, u as parseToolCallItem, n as pickAvatarTarget, r as prepareAvatarImage, A as presetAvatarImageUrl, i as resizeAndCropImage, a as resizeToMaxDimension, _ as uint8ArrayToBase64 };
+var V = "0.1.4";
+export { t as AVATAR_LANDSCAPE, e as AVATAR_PORTRAIT, o as CHIME_PRESETS, c as ChimeSynth, l as Fmp4Player, S as LiveSession, m as LiveSocketClient, T as PREBUILT_VOICES, w as PRESET_AVATARS, E as PRESET_AVATAR_VOICES, y as PcmMic, b as PcmPlayer, d as TranscriptAssembler, V as VERSION, x as VisionCapture, N as WebmcpCallEvent, M as WebmcpToolError, z as WebmcpToolHost, F as annotationsFor, I as asObject, p as base64ToArrayBuffer, P as canonicalJSON, v as computeInt16Rms, h as createPcmCaptureContext, k as defaultVoiceForAvatar, f as describeCloseEvent, g as int16ArrayToLittleEndianBytes, O as isPrebuiltVoice, D as isPresetAvatar, j as nativeModelContext, s as normalizeChimePreset, u as parseToolCallItem, n as pickAvatarTarget, r as prepareAvatarImage, A as presetAvatarImageUrl, i as resizeAndCropImage, a as resizeToMaxDimension, _ as uint8ArrayToBase64 };

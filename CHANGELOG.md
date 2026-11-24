@@ -4,6 +4,15 @@ All notable changes to `livebridge` (`github.com/ghchinoy/livebridge` and `@ghch
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and both the Go module and TypeScript package follow lockstep [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2026-11-24
+
+### Fixed
+
+- **WebMCP PR #348 `Tool` Interface Compatibility (`ts/webmcp-host.ts`, `browser/dist/livebridge.esm.js`):**
+  - Updated `WebmcpToolHost.list()` and `callWithOutput()` to enforce same-window ownership via `tool.source` (`WindowProxy | null`, rejecting cross-frame tools and detached `null` sources) while preserving fallback support for legacy pre-PR #348 `RegisteredTool.window`.
+  - Treated nullable `tool.inputSchema === null` as absent alongside `undefined` and `''` so tools registered without an `inputSchema` are no longer dropped as `"unparseable inputSchema"`, and recorded `'null'` in `diagnostics.schemaType`.
+  - Extended `WebmcpRegisteredTool` types (`source`, nullable `inputSchema`/`outputSchema`/`annotations`, `title`) and added Vitest coverage for non-enumerable `Tool` prototype getters, `source` filtering, nullable `inputSchema`, and `NotFoundError` handling on mid-flight unregistration.
+
 ## [0.1.3] - 2026-11-22
 
 ### Security & Dependencies
@@ -53,6 +62,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Stand-Alone Validation Examples & Documentation:**
   - `01-minimal-voice`, `02-avatar-desk`, `03-code-assistant`, and `04-ops-watchtower` plus full Diátaxis documentation (`README.md`, `docs/developers-guide.md`, `docs/recipes.md`, `docs/wire-protocol.md`).
 
+[0.1.4]: https://github.com/ghchinoy/livebridge/releases/tag/v0.1.4
 [0.1.3]: https://github.com/ghchinoy/livebridge/releases/tag/v0.1.3
 [0.1.2]: https://github.com/ghchinoy/livebridge/releases/tag/v0.1.2
 [0.1.1]: https://github.com/ghchinoy/livebridge/releases/tag/v0.1.1

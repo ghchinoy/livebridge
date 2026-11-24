@@ -310,6 +310,233 @@ describe('WebmcpToolHost', () => {
     expect(res).toEqual({ count: 4 });
     expect(mcHost.diagnostics.argsForm).toBe('string');
   });
+
+  it('supports WebMCP PR #348 Tool interface (prototype getters, source filtering, nullable inputSchema, NotFoundError)', async () => {
+    // Models the WebIDL Tool interface: non-enumerable prototype getters
+    // (JSON.stringify(t) === '{}', spread copies nothing), `source` instead of
+    // `window`, and `null` instead of `undefined` when inputSchema is omitted.
+    class FakeTool implements WebmcpRegisteredTool {
+      readonly #id: symbol;
+      readonly #name: string;
+      readonly #description: string;
+      readonly #inputSchema: Record<string, unknown> | null;
+      readonly #source: Window | null;
+
+      constructor(
+        id: symbol,
+        name: string,
+        description: string,
+        inputSchema: Record<string, unknown> | null,
+        source: Window | null,
+      ) {
+        this.#id = id;
+        this.#name = name;
+        this.#description = description;
+        this.#inputSchema = inputSchema;
+        this.#source = source;
+      }
+
+      get name() {
+        return this.#name;
+      }
+      get title() {
+        return '';
+      }
+      get description() {
+        return this.#description;
+      }
+      get inputSchema() {
+        return this.#inputSchema;
+      }
+      get outputSchema() {
+        return null;
+      }
+      get source() {
+        return this.#source;
+      }
+      get origin() {
+        return window.location.origin;
+      }
+      get annotations() {
+        return null;
+      }
+      get internalId() {
+        return this.#id;
+      }
+    }
+
+    const otherWindow = {} as Window;
+    const registry = new Map<
+      symbol,
+      {
+        name: string;
+        description: string;
+        inputSchema: Record<string, unknown> | null;
+        source: Window | null;
+        exec: (input: Record<string, unknown> | string) => Promise<unknown>;
+      }
+    >();
+
+    // Seed an iframe tool and a detached-document tool BEFORE our own tool so
+    // any failure to check `tool.source` would hijack both list() and call().
+    const iframeId = Symbol('iframe');
+    let iframeCalls = 0;
+    registry.set(iframeId, {
+      name: 'ping',
+      description: 'Health check with no input schema',
+      inputSchema: null,
+      source: otherWindow,
+      exec: async () => {
+        iframeCalls++;
+        return { pong: 'iframe' };
+      },
+    });
+    const detachedId = Symbol('detached');
+    registry.set(detachedId, {
+      name: 'ping',
+      description: 'Health check with no input schema',
+      inputSchema: null,
+      source: null,
+      exec: async () => ({ pong: 'detached' }),
+    });
+
+    let failNextWithNotFound = false;
+    const toolMc: ModelContextLike = Object.assign(new EventTarget(), {
+      async registerTool(
+        t: {
+          name: string;
+          description: string;
+          inputSchema?: Record<string, unknown>;
+          execute: (
+            input: Record<string, unknown> | string,
+          ) => Promise<unknown>;
+        },
+        options?: { signal?: AbortSignal },
+      ) {
+        const id = Symbol(t.name);
+        registry.set(id, {
+          name: t.name,
+          description: t.description,
+          inputSchema: t.inputSchema ?? null,
+          source: window,
+          exec: t.execute,
+        });
+        options?.signal?.addEventListener('abort', () => {
+          registry.delete(id);
+        });
+      },
+      async getTools() {
+        // Fresh Tool instances per getTools() call, matching PR #348.
+        return Array.from(registry.entries()).map(
+          ([id, entry]) =>
+            new FakeTool(
+              id,
+              entry.name,
+              entry.description,
+              entry.inputSchema,
+              entry.source,
+            ),
+        );
+      },
+      async executeTool(
+        tool: WebmcpRegisteredTool,
+        input: Record<string, unknown> | string,
+      ) {
+        if (!(tool instanceof FakeTool)) {
+          throw new TypeError('Illegal invocation: expected Tool instance');
+        }
+        if (failNextWithNotFound) {
+          failNextWithNotFound = false;
+          throw new DOMException(
+            'Tool registration not found',
+            'NotFoundError',
+          );
+        }
+        const entry = registry.get(tool.internalId);
+        if (!entry) {
+          throw new DOMException(
+            'Tool registration not found',
+            'NotFoundError',
+          );
+        }
+        return JSON.stringify(await entry.exec(input));
+      },
+    });
+
+    // Sanity check our FakeTool matches PR #348 non-enumerable semantics.
+    const sampleTool = new FakeTool(Symbol('s'), 'ping', 'desc', null, window);
+    expect(JSON.stringify(sampleTool)).toBe('{}');
+    expect({ ...sampleTool }).toEqual({});
+    expect('window' in sampleTool).toBe(false);
+
+    const host = new WebmcpToolHost((signal) => ({ signal }), toolMc);
+    await host.register([
+      {
+        name: 'ping',
+        description: 'Health check with no input schema',
+        execute: async () => ({ result: { pong: 'self' } }),
+      },
+    ]);
+
+    const listed = await host.list();
+    expect(listed).toEqual([
+      { name: 'ping', description: 'Health check with no input schema' },
+    ]);
+    expect(host.diagnostics.dropped).toEqual([]);
+    expect(host.diagnostics.schemaType).toBe('null');
+
+    const res = await host.call('ping', {}, new AbortController().signal);
+    expect(res).toEqual({ pong: 'self' });
+    expect(iframeCalls).toBe(0);
+
+    // Mid-flight unregistration (NotFoundError) returns a clean tool error.
+    failNextWithNotFound = true;
+    const errRes = await host.call('ping', {}, new AbortController().signal);
+    expect(errRes.error).toContain('Tool registration not found');
+  });
+
+  it('continues filtering legacy RegisteredTool.window when source is absent', async () => {
+    const otherWindow = {} as Window;
+    const legacyMc: ModelContextLike = Object.assign(new EventTarget(), {
+      async registerTool() {},
+      async getTools() {
+        return [
+          {
+            name: 'status',
+            description: 'Read status',
+            inputSchema: { type: 'object', properties: {} },
+            window: otherWindow,
+          },
+          {
+            name: 'status',
+            description: 'Read status',
+            inputSchema: { type: 'object', properties: {} },
+            window,
+          },
+        ];
+      },
+      async executeTool(tool: WebmcpRegisteredTool) {
+        return JSON.stringify({
+          sameWindow: tool.window === window,
+        });
+      },
+    });
+
+    const host = new WebmcpToolHost((signal) => ({ signal }), legacyMc);
+    await host.register([
+      {
+        name: 'status',
+        description: 'Read status',
+        inputSchema: { type: 'object', properties: {} },
+        execute: async () => ({ result: { sameWindow: true } }),
+      },
+    ]);
+
+    const listed = await host.list();
+    expect(listed).toHaveLength(1);
+    const res = await host.call('status', {}, new AbortController().signal);
+    expect(res).toEqual({ sameWindow: true });
+  });
 });
 
 describe('LiveSession & @ghchinoy/livebridge/lit', () => {
